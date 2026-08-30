@@ -54,9 +54,13 @@ your preset.
 
 ## Requirements
 
-The add-on build of ReShade, version 6.8.0 or the API 20 equivalent. The SDK version has to match
-the runtime or ReShade refuses the add-on with error 1114, and the headers in `sdk/` are pinned to
-6.8.0. Older runtimes work if you rebuild against their SDK.
+The add-on build of ReShade 6.6.0 or newer, which is every release since September 2025.
+
+ReShade refuses an add-on built against a newer API than its own, but goes on serving the older
+APIs it has always supported, so the pin belongs at the floor rather than at the version you happen
+to run. `sdk/` holds the 6.6.2 headers (API 18) and `imgui/` the matching ImGui 19222 from the
+docking branch, which every later runtime still answers. Both are exact: ReShade's own header stops
+the build if the ImGui version beside it is not the one that SDK expects.
 
 DX11 only. GTA V Enhanced uses a different shader set and is not supported.
 

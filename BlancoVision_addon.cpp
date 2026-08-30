@@ -315,7 +315,7 @@ static void inject_refresh(effect_runtime *runtime) // s_mutex held
 	device *const dev = runtime->get_device();
 	if (s_inject_buf.handle == 0)
 	{
-		if (!dev->create_resource(resource_desc(sizeof(s_inject_data), memory_heap::default_, resource_usage::constant_buffer),
+		if (!dev->create_resource(resource_desc(sizeof(s_inject_data), memory_heap::gpu_only, resource_usage::constant_buffer),
 			nullptr, resource_usage::constant_buffer, &s_inject_buf))
 		{
 			logf("BlancoVision.addon inject: could not create the constant buffer, injection off");

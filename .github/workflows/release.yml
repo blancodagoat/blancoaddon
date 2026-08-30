@@ -39,8 +39,8 @@ jobs:
           tag: ${{ github.event.inputs.tag || github.ref_name }}
           body: |
             Drop the contents of `BlancoVision-addon.zip` next to `ReShade.ini`, which on FiveM is
-            `FiveM.app\plugins`. Needs the add-on build of ReShade 6.8.0 (API 20); an add-on built
-            against a newer API than the runtime is refused with error 1114.
+            `FiveM.app\plugins`. Needs the add-on build of ReShade 6.6.0 or newer; a runtime older
+            than the API an add-on was built against refuses to load it.
 
             Then enable **BlancoVision addon control** in the ReShade overlay. The add-on's own
             window carries the settings that live in the ini and the counters that say whether it
