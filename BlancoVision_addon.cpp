@@ -96,6 +96,8 @@ struct Rule
 	// count there is no way to tell that apart from a setting the game ignores.
 	char name[64] = "";
 	uint64_t writes = 0;      // times this rule changed bytes on their way to the GPU
+	uint64_t tried = 0;       // times it reached apply() while off its neutral value
+	uint64_t size_ok = 0;     // of those, times bv_size matched the buffer actually bound
 	bool seen_buffer = false; // a matching buffer was bound by a matching draw at least once
 };
 // One add-on owned cbuffer, filled from the effect once a frame.
@@ -677,7 +679,12 @@ static void apply(uint64_t buf, float *data, uint64_t offset, uint64_t size, uin
 	{
 		if (!mask.test(i)) continue;
 		Rule &r = s_rules[i];
-		if (!r.effective || (r.size != 0 && static_cast<uint64_t>(r.size) != total)) continue;
+		if (!r.effective) continue;
+		// Counted apart so the panel can separate a bv_size that never matches anything from one
+		// that matches and then falls out on the offset or the bv_when gate.
+		++r.tried;
+		if (r.size != 0 && static_cast<uint64_t>(r.size) != total) continue;
+		++r.size_ok;
 		const auto bt = s_base.find(buf);
 		const int64_t base = bt != s_base.end() ? static_cast<int64_t>(bt->second) : 0;
 		const int64_t first = static_cast<int64_t>(r.offset) + base - static_cast<int64_t>(offset / 4);
@@ -797,11 +804,11 @@ static void draw_overlay(effect_runtime *runtime)
 
 	if (ImGui::CollapsingHeader("Which settings are reaching the game"))
 	{
-		ImGui::TextWrapped("Red never saw its buffer bound: the register or the hash group is wrong "
-			"for this build, and no slider will ever move it. Grey is switched off or sitting at its "
-			"default, which is normal. Green is writing. A rule with the wrong bv_size reads as grey, "
-			"so move a slider before trusting one.");
-		unsigned live = 0, idle = 0, missing = 0;
+		ImGui::TextWrapped("Green is writing. Grey is switched off or sitting at its default. Red is "
+			"broken and no slider will move it: \"no buffer\" means nothing ever bound that register "
+			"in that hash group, \"wrong size\" means bv_size never matched a buffer that did, and "
+			"\"never wrote\" means it matched and then fell out on bv_offset or the bv_when gate.");
+		unsigned live = 0, idle = 0, broken = 0;
 		std::string copy; // the same table as plain text, for pasting somewhere it can be read
 		if (ImGui::BeginTable("bvdiag", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 		{
@@ -811,27 +818,32 @@ static void draw_overlay(effect_runtime *runtime)
 			ImGui::TableHeadersRow();
 			for (const Rule &r : s_rules)
 			{
-				const bool no_buffer = !r.seen_buffer;
-				if (no_buffer) ++missing; else if (r.writes != 0) ++live; else ++idle;
+				// Only a rule that has actually been exercised can be called broken, so everything
+				// still sitting at its default stays grey no matter what its registers say.
+				const char *fault = !r.seen_buffer ? "no buffer"
+					: r.writes != 0 ? nullptr
+					: r.tried == 0 ? nullptr
+					: r.size_ok == 0 ? "wrong size" : "never wrote";
+				if (fault != nullptr) ++broken; else if (r.writes != 0) ++live; else ++idle;
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
-				if (no_buffer) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", r.name);
+				if (fault != nullptr) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", r.name);
 				else if (r.writes != 0) ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f), "%s", r.name);
 				else ImGui::TextDisabled("%s", r.name);
 				ImGui::TableNextColumn();
 				ImGui::Text("b%d/%d", r.slot, r.size);
 				ImGui::TableNextColumn();
-				if (no_buffer) ImGui::TextUnformatted("no such buffer");
+				if (fault != nullptr) ImGui::TextUnformatted(fault);
 				else ImGui::Text("%llu", static_cast<unsigned long long>(r.writes));
 				char line[160];
 				std::snprintf(line, sizeof(line), "%-40s b%d/%-5d %s\n", r.name, r.slot, r.size,
-					no_buffer ? "no such buffer" : std::to_string(r.writes).c_str());
+					fault != nullptr ? fault : std::to_string(r.writes).c_str());
 				copy += line;
 			}
 			ImGui::EndTable();
 		}
 		char tail[128];
-		std::snprintf(tail, sizeof(tail), "%u writing, %u off or at their default, %u never found a buffer", live, idle, missing);
+		std::snprintf(tail, sizeof(tail), "%u writing, %u off or at their default, %u broken", live, idle, broken);
 		ImGui::TextUnformatted(tail);
 		ImGui::SameLine();
 		if (ImGui::Button("Copy")) ImGui::SetClipboardText((copy + tail + "\n").c_str());
