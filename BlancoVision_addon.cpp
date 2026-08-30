@@ -23,6 +23,11 @@
 // bv_op ("set" | "mul" | "add", patch only), bv_switch (name of a bool uniform gating the rule),
 // bv_size (only buffers of exactly this byte size, guards a register two cbuffers share).
 //
+// bv_when_offset plus bv_when gate a patch on the buffer's own contents: the rule applies only
+// when the float at bv_when_offset falls inside the float2 uniform bv_when names. The same
+// cbuffer is uploaded once per light, so this is how one slider reaches street lights and not
+// head lights: gate on the light radius and set the range.
+//
 // Shaders are also replaced by hash: the DXBC is CRC32-hashed at pipeline creation and swapped for
 // <ReShade base path>\BlancoVision\0x<hash>.cso when that file exists.
 //
@@ -78,10 +83,12 @@ static std::string base_path()
 // ---------------------------------------------------------------------------- state
 struct Rule
 {
-	effect_uniform_variable var = { 0 }, sw = { 0 };
+	effect_uniform_variable var = { 0 }, sw = { 0 }, when = { 0 };
 	bool read = false, active = false, effective = false; // effective: active AND not a no-op
 	std::string group;
 	int slot = 0, offset = 0, count = 1, op = 0, size = 0; // op: 0 set, 1 mul, 2 add; size 0 = any
+	int when_offset = -1;                                 // < 0 = ungated
+	float when_range[2] = { 0, 0 };
 	float value[4] = { 0, 0, 0, 0 }, readback[16] = { 0 };
 	bool have_readback = false;
 };
@@ -252,6 +259,14 @@ static void collect_rules(effect_runtime *runtime)
 		runtime->get_annotation_int_from_uniform_variable(var, "bv_size", &r.size, 1);
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_op", text))
 			r.op = std::strcmp(text, "mul") == 0 ? 1 : std::strcmp(text, "add") == 0 ? 2 : 0;
+		if (!runtime->get_annotation_int_from_uniform_variable(var, "bv_when_offset", &r.when_offset, 1))
+			r.when_offset = -1;
+		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_when", text))
+		{
+			char effect[260] = "";
+			runtime->get_uniform_variable_effect_name(var, effect);
+			r.when = runtime->find_uniform_variable(effect, text);
+		}
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_switch", text))
 		{
 			char effect[260] = "";
@@ -317,6 +332,7 @@ static void refresh_rules(effect_runtime *runtime, command_list *, resource_view
 		}
 		bool on = true;
 		if (r.sw.handle != 0) runtime->get_uniform_value_bool(r.sw, &on, 1);
+		if (r.when.handle != 0) runtime->get_uniform_value_float(r.when, r.when_range, 2);
 		r.active = s_enabled && on;
 		runtime->get_uniform_value_float(r.var, r.value, r.count);
 		// A rule at its neutral value must not claim the buffer: claiming it takes over the upload and
@@ -640,6 +656,13 @@ static void apply(uint64_t buf, float *data, uint64_t offset, uint64_t size, uin
 		const int64_t base = bt != s_base.end() ? static_cast<int64_t>(bt->second) : 0;
 		const int64_t first = static_cast<int64_t>(r.offset) + base - static_cast<int64_t>(offset / 4);
 		if (first < 0 || static_cast<uint64_t>(first + r.count) * 4 > size) continue;
+		if (r.when_offset >= 0)
+		{
+			const int64_t at = static_cast<int64_t>(r.when_offset) + base - static_cast<int64_t>(offset / 4);
+			if (at < 0 || static_cast<uint64_t>(at + 1) * 4 > size) continue;
+			const float v = data[at];
+			if (v < r.when_range[0] || v > r.when_range[1]) continue;
+		}
 		float *p = data + first;
 		if (r.read) { for (int k = 0; k < r.count; ++k) r.readback[k] = p[k]; r.have_readback = true; continue; }
 		for (int k = 0; k < r.count; ++k)

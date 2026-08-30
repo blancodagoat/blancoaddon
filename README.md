@@ -77,6 +77,21 @@ exactly that byte size, which matters when two different buffers share a registe
 a hash group from the ini so a rule only fires for the shaders you mean, and `bv_switch` names a
 bool uniform that gates it.
 
+`bv_when_offset` and `bv_when` gate a rule on the contents of the buffer it is about to write. The
+rule applies only when the float at `bv_when_offset` falls inside the range held by the `float2`
+uniform `bv_when` names. GTA V uploads its light constants once per light, so a tint on the light
+colour would otherwise hit street lights, head lights and coronas alike. Gate it on the light radius
+and the range becomes a slider that picks which lights you meant:
+
+```hlsl
+uniform float2 LightRadiusRange < ui_type = "slider"; ui_min = 0.0; ui_max = 80.0; > = float2(10.0, 80.0);
+uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 12; bv_op = "mul";
+    bv_when_offset = 17; bv_when = "LightRadiusRange"; ui_type = "color"; > = float3(1.0, 0.72, 0.42);
+```
+
+`examples/BlancoVision_Control.fx` has that section filled in, along with the offsets for light
+position, direction, intensity and radius, and the sun shadow parameters.
+
 Use the custom `bv` annotation, not ReShade's `source`. A uniform with a `source` annotation is
 special to ReShade and gets no widget drawn, which hides your whole panel.
 

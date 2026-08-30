@@ -111,17 +111,42 @@ uniform float3 FogColour < bv = "patch"; bv_slot = 3; bv_size = 960; bv_offset =
 uniform float4 SunDirectionView < bv = "read"; bv_slot = 3; bv_size = 960; bv_offset = 0;
     ui_type = "drag"; noedit = true; ui_label = "gDirectionalLight (read)"; ui_category = "Globals (b2, b3)"; > = float4(0, 0, 0, 0);
 
-// ---- lighting_locals, register b12 (336 bytes), deferredLightParams (docs/work/fxc.md 4.2) ----
-// Group "directional" is empty in BlancoVision.addon.ini until the directional pass hashes are
-// found with DumpConstants (its b12 dump shows deferredLightParams[9].w near 0.75). Some shader
-// sets bind this buffer at b11 instead; the dump tells.
-uniform bool OverrideShadowFloor < ui_label = "Override shadow floor"; ui_category = "Directional light (b12, needs group)"; > = false;
-uniform float ShadowFloor < bv = "patch"; bv_group = "directional"; bv_slot = 12; bv_size = 336; bv_offset = 39; bv_op = "set"; bv_switch = "OverrideShadowFloor";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Shadow floor (deferredLightParams[9].w, ENB ShadowAmount)"; ui_category = "Directional light (b12, needs group)"; > = 0.75;
-uniform float ShadowSoftness < bv = "patch"; bv_group = "directional"; bv_slot = 12; bv_size = 336; bv_offset = 37; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.01; ui_label = "Shadow softness x (deferredLightParams[9].y)"; ui_category = "Directional light (b12, needs group)"; > = 1.0;
-uniform float ShadowBias < bv = "patch"; bv_group = "directional"; bv_slot = 12; bv_size = 336; bv_offset = 40; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.01; ui_label = "Shadow softness bias x (deferredLightParams[10].x)"; ui_category = "Directional light (b12, needs group)"; > = 1.0;
+// ---- lighting_locals, 336 bytes, deferredLightParams. The sun pass binds it at b11 and the
+// artificial light pass at b12, so the register alone separates them and no hash group is needed
+// (tools/disasm.py on the vanilla containers; b11 also carries a 96 byte buffer, hence bv_size).
+uniform bool OverrideShadowFloor < ui_label = "Override shadow floor"; ui_category = "Sun light (b11)"; > = false;
+uniform float ShadowFloor < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset = 39; bv_op = "set"; bv_switch = "OverrideShadowFloor";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Shadow floor (deferredLightParams[9].w, ENB ShadowAmount)"; ui_category = "Sun light (b11)"; > = 0.75;
+uniform float ShadowSoftness < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset = 37; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.01; ui_label = "Shadow softness x (deferredLightParams[9].y)"; ui_category = "Sun light (b11)"; > = 1.0;
+uniform float ShadowBias < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset = 40; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.01; ui_label = "Shadow softness bias x (deferredLightParams[10].x)"; ui_category = "Sun light (b11)"; > = 1.0;
+
+// ---- Deferred lights, lighting_locals at b12: every artificial light in the scene ---------------
+// deferredLightParams[0] position, [1] direction, [2] tangent, [3] colour rgb and intensity w,
+// [4].y radius. The buffer is uploaded once per light, so the radius gate is what separates street
+// lights from head lights and coronas. Widen it to the full range to tint everything.
+uniform float2 LightRadiusRange < ui_type = "slider"; ui_min = 0.0; ui_max = 80.0; ui_step = 0.5;
+    ui_label = "Only lights with a radius in this range";
+    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone."; ui_category = "Deferred lights (b12)"; > = float2(0.0, 80.0);
+uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 12; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
+    ui_type = "color"; ui_label = "Light colour tint";
+    ui_tooltip = "Multiplies the light's own colour, so it tints rather than replaces. Warm sodium is roughly 1.0, 0.72, 0.42; cold LED roughly 0.85, 0.92, 1.0."; ui_category = "Deferred lights (b12)"; > = float3(1.0, 1.0, 1.0);
+uniform float LightIntensity < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 15; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Light intensity";
+    ui_tooltip = "Brightness of the same lights. Under 1 dims them without touching their reach."; ui_category = "Deferred lights (b12)"; > = 1.0;
+uniform float LightRadius < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 17; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
+    ui_type = "slider"; ui_min = 0.25; ui_max = 3.0; ui_step = 0.05; ui_label = "Light reach";
+    ui_tooltip = "How far the light carries. The gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range."; ui_category = "Deferred lights (b12)"; > = 1.0;
+
+// ---- deferred_lighting_locals, register b11, 96 bytes: peds ------------------------------------
+uniform float3 SkinColourTweak < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 0; bv_op = "mul";
+    ui_type = "color"; ui_label = "Skin colour";
+    ui_tooltip = "Subsurface tint on peds. The 96 byte size is what tells this buffer apart from the sun's, which shares register b11."; ui_category = "Peds (b11)"; > = float3(1.0, 1.0, 1.0);
+uniform float3 RimLightColour < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 12; bv_op = "mul";
+    ui_type = "color"; ui_label = "Rim light colour";
+    ui_tooltip = "Marked unused in the shaders shipped with this build, so it may do nothing."; ui_category = "Peds (b11)"; > = float3(1.0, 1.0, 1.0);
+
 
 float4 PS_Nop(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { if (pos.x >= 0.0) discard; return 0.0; }
 
