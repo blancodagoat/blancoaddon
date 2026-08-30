@@ -312,6 +312,67 @@ uniform float4 WaterSpeed < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset 
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Water animation speed";
     ui_tooltip = "gScaledTime, the clock the water animation runs on, read by 6 shaders. Below 1 slows the whole surface down."; ui_category = "Water"; > = float4(1.0, 1.0, 1.0, 1.0);
 
+// ---- Sky, sky_system_locals at b12, 480 bytes ---------------------------------------------------
+// The timecycle's sky lanes arrive here, so these are a live preview of keys that otherwise need a
+// restart. Read counts are from sky_system.fxc: most of these are read by 48 shaders, the sun
+// direction by 96. Nothing here touches sun direction, which would move the lighting.
+uniform float3 SkyZenithColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 12; bv_op = "mul";
+    ui_type = "color"; ui_label = "Sky colour overhead";
+    ui_tooltip = "zenithColor, the colour straight up. The single strongest control over whether a clear day reads warm or cold."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float3 SkyZenithTransition < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 16; bv_op = "mul";
+    ui_type = "color"; ui_label = "Sky colour halfway up";
+    ui_tooltip = "zenithTransitionColor, the band between overhead and the horizon."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float3 SkyEastColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 0; bv_op = "mul";
+    ui_type = "color"; ui_label = "Horizon colour, sunward";
+    ui_tooltip = "azimuthEastColor. The horizon is blended from two colours by which way you face, and this is the warm one at dawn and dusk."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float3 SkyWestColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 4; bv_op = "mul";
+    ui_type = "color"; ui_label = "Horizon colour, away from the sun";
+    ui_tooltip = "azimuthWestColor, the opposite side of that blend."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float3 SkyHorizonTransition < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 8; bv_op = "mul";
+    ui_type = "color"; ui_label = "Horizon blend colour";
+    ui_tooltip = "azimuthTransitionColor, sitting between the two horizon colours."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float SkyBrightness < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 32; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.02; ui_label = "Sky brightness";
+    ui_tooltip = "hdrIntensity. Scales the whole sky before the tonemap, so it changes how much the sky drives exposure, not just how bright it looks."; ui_category = "Sky"; > = 1.0;
+uniform float3 SunGlowColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 36; bv_op = "mul";
+    ui_type = "color"; ui_label = "Sun glow colour";
+    ui_tooltip = "sunColorHdr, the halo around the sun rather than the disc itself."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float3 SunDiscColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 40; bv_op = "mul";
+    ui_type = "color"; ui_label = "Sun disc colour";
+    ui_tooltip = "sunDiscColorHdr, the disc you can point at."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+uniform float4 SunShape < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 44; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.1; ui_max = 4.0; ui_step = 0.02; ui_label = "Sun size and falloff";
+    ui_tooltip = "sunConstants, read by 48 shaders. How big the disc is and how fast its glow falls off. Drag one component at a time facing the sun."; ui_category = "Sky"; > = float4(1.0, 1.0, 1.0, 1.0);
+
+// ---- Clouds. The sky pass carries its own copies at b12 480, the cloud passes use b12 464 --------
+uniform float3 SkyCloudColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 60; bv_op = "mul";
+    ui_type = "color"; ui_label = "Cloud colour (sky pass)";
+    ui_tooltip = "cloudMidColour, the lit body of the cloud as the sky shader draws it."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+uniform float3 SkyCloudShadow < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 64; bv_op = "mul";
+    ui_type = "color"; ui_label = "Cloud shadow depth (sky pass)";
+    ui_tooltip = "cloudShadowMinusBaseColourTimesShadowStrength. How dark the underside of a cloud goes, which is most of what makes an overcast sky read as heavy."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+uniform float4 SkyCloudDetail < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 68; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.02; ui_label = "Cloud detail (sky pass)";
+    ui_tooltip = "cloudDetailConstants, read by 72 shaders."; ui_category = "Clouds"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float3 CloudColour < bv = "patch"; bv_slot = 12; bv_size = 464; bv_offset = 20; bv_op = "mul";
+    ui_type = "color"; ui_label = "Cloud colour";
+    ui_tooltip = "gCloudColor in the cloud passes themselves, the drawn clouds rather than the sky dome behind them."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+uniform float3 CloudAmbient < bv = "patch"; bv_slot = 12; bv_size = 464; bv_offset = 24; bv_op = "mul";
+    ui_type = "color"; ui_label = "Cloud ambient";
+    ui_tooltip = "gAmbientColor. The sky light filling the shaded side."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+uniform float3 CloudBounce < bv = "patch"; bv_slot = 12; bv_size = 464; bv_offset = 28; bv_op = "mul";
+    ui_type = "color"; ui_label = "Cloud bounce light";
+    ui_tooltip = "gBounceColor, light coming back up off the ground into the cloud base."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+uniform float4 CloudDensity < bv = "patch"; bv_slot = 12; bv_size = 464; bv_offset = 32; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.02; ui_label = "Cloud density";
+    ui_tooltip = "gDensityShiftScale. Thicker clouds hold their shape further out; thin ones wash into the sky."; ui_category = "Clouds"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 CloudPiercingLight < bv = "patch"; bv_slot = 12; bv_size = 464; bv_offset = 40; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.02; ui_label = "Light through clouds";
+    ui_tooltip = "gPiercingLightPower_Strength_NormalStrength_Thickness, read by 7 shaders. The sun coming through a cloud edge, which is the bright rim you get looking towards the sun."; ui_category = "Clouds"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float3 CloudDiffuseFill < bv = "patch"; bv_slot = 12; bv_size = 464; bv_offset = 44; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.02; ui_label = "Cloud diffuse and fill";
+    ui_tooltip = "gScaleDiffuseFillAmbient, the balance between direct light, fill and ambient on a cloud."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+
 float4 PS_Nop(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { if (pos.x >= 0.0) discard; return 0.0; }
 
 technique BlancoVision_Control
