@@ -99,6 +99,8 @@ Finding your own offsets does not need the dump switch either. `D3DDisassemble` 
 block naming every cbuffer variable with its byte offset and marking the unused ones, and the
 instruction stream tells you what each one does.
 
+A rule costs one bit in a 128 bit mask, so 128 of them can be live at once.
+
 Two warnings from doing that across forty containers. Several registers carry more than one buffer,
 so `bv_size` is not optional. Worse, the same named buffer is not the same layout everywhere:
 GTA V's `misc_globals` is 352 bytes in the deferred passes and 336 in the world ones, with three

@@ -227,6 +227,54 @@ uniform float4 WaterFogParams < bv = "patch"; bv_slot = 11; bv_size = 64; bv_off
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Water clarity";
     ui_tooltip = "FogParams in water_locals, read by 8. How fast the water fogs out with depth. Lower is clearer and shows the bottom, higher is murkier. Register b11 also carries the sun pass at 336 bytes and ped skin at 96, so the 64 is what keeps this off them."; ui_category = "Water (b4, b11)"; > = float4(1.0, 1.0, 1.0, 1.0);
 
+// ---- The rest of ssao_locals (b12, 352): hbaosettings.xml, live -------------------------------
+// hbaosettings.xml carries 13 numbers and needs a restart to change one. They arrive here, so the
+// whole file is tunable live. Components are not named in the shader, so the honest way to use this
+// is one drag at a time against a fixed shot, then write what wins back into the xml.
+uniform float4 SSAONormalOffset < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 4; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO normal offset";
+    ui_tooltip = "gNormalOffset. How far the sample point is pushed off the surface before tracing, which is the usual cure for a surface occluding itself."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOOffsetScale0 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 8; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO sample offsets 0";
+    ui_tooltip = "gOffsetScale0, the sampling pattern. Scaling it up widens the search and is the other half of the radius, next to the kernel."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOOffsetScale1 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 12; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO sample offsets 1";
+    ui_tooltip = "gOffsetScale1, the second pattern."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOMixFade < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 20; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO mix and fade in";
+    ui_tooltip = "g_CPQSMix_QSFadeIn. The blend between the two AO methods and where the cheaper one fades in. CPRelativeStrength and the blend distances in hbaosettings.xml land around here."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOExtra0 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 40; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO extra params 0";
+    ui_tooltip = "gExtraParams0, read by 4 shaders."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOExtra1 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 44; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO extra params 1";
+    ui_tooltip = "gExtraParams1."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOExtra2 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 48; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO extra params 2";
+    ui_tooltip = "gExtraParams2, the most read of the five at 6 shaders."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOExtra3 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 52; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO extra params 3";
+    ui_tooltip = "gExtraParams3."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 SSAOExtra4 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 56; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO extra params 4";
+    ui_tooltip = "gExtraParams4. FoliageStrength, MaxPixels and CutoffPixels are somewhere in these five."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+
+// ---- Material specular and reflectivity, megashader_locals at b12 -------------------------------
+// Per material, uploaded per draw, so these scale a whole shader family at once. The layout differs
+// per family and so does the buffer size, which is what picks the family here: 48 bytes is the
+// normal_spec_reflect glass. The plain glass_reflect family is 32 bytes, which is also the size of
+// cascadeshadows_recieving_locals on the same register, so it is not addressable by size alone and
+// is left out. Another family sharing 48 would be caught too, so watch the frame, not the label.
+uniform float GlassReflectivity < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 8; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Glass reflectivity";
+    ui_tooltip = "reflectivePower on the normal_spec_reflect family, read by 12 shaders. How much of the reflection cube a window shows."; ui_category = "Materials (b12)"; > = 1.0;
+uniform float GlassSpecular < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 2; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Glass specular";
+    ui_tooltip = "specularIntensityMult on the same family. The hard highlight, as opposed to the mirrored image."; ui_category = "Materials (b12)"; > = 1.0;
+uniform float GlassBumpiness < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 7; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Glass bumpiness";
+    ui_tooltip = "bumpiness. Normal map strength, so it bends the reflection rather than brightening it."; ui_category = "Materials (b12)"; > = 1.0;
+
 float4 PS_Nop(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { if (pos.x >= 0.0) discard; return 0.0; }
 
 technique BlancoVision_Control

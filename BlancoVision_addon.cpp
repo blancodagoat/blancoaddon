@@ -96,13 +96,25 @@ struct Rule
 struct Inject { effect_uniform_variable var = { 0 }; int offset = 0, count = 1; };
 struct CmdState { uint32_t ps_hash = 0; uint64_t cb[16] = { 0 }; uint64_t cb_first[16] = { 0 }; uint64_t rtv = 0; };
 struct Mapped { void *data; uint64_t offset; };
+// One bit per rule, recorded per constant buffer. Two words because a panel that covers lights,
+// shadows, AO, water and the postfx composite passes 64 rules on its own.
+struct Mask
+{
+	uint64_t w[2] = { 0, 0 };
+	void set(size_t i) { w[i >> 6] |= 1ull << (i & 63); }
+	bool test(size_t i) const { return ((w[i >> 6] >> (i & 63)) & 1) != 0; }
+	bool any() const { return (w[0] | w[1]) != 0; }
+	void clear() { w[0] = w[1] = 0; }
+	Mask operator&(const Mask &o) const { Mask r; r.w[0] = w[0] & o.w[0]; r.w[1] = w[1] & o.w[1]; return r; }
+};
+static const size_t MAX_RULES = 128;
 
 static std::mutex s_mutex;
-static std::vector<Rule> s_rules;                                   // at most 64 (one bit each in a target mask)
+static std::vector<Rule> s_rules;                                   // at most MAX_RULES (one bit each in a target mask)
 static std::unordered_map<std::string, std::unordered_set<uint32_t>> s_groups;
 static std::unordered_map<uint64_t, uint32_t> s_pipeline_hash;      // pipeline handle -> pixel shader crc32
 static std::unordered_map<command_list *, CmdState> s_cmd;
-static std::unordered_map<uint64_t, uint64_t> s_targets;            // buffer handle -> rule bitmask
+static std::unordered_map<uint64_t, Mask> s_targets;                // buffer handle -> rule bitmask
 static std::unordered_map<uint64_t, uint64_t> s_base;               // buffer handle -> bound sub-range base, in floats
 static std::unordered_map<uint64_t, Mapped> s_mapped;
 struct Snapshot { uint64_t total = 0; std::vector<float> floats; };
@@ -121,7 +133,7 @@ static bool s_hdr_upgrade = false;
 static uint32_t s_upgraded = 0;
 static bool s_upgrade_pending = false;                             // set in create_resource, read by the init_resource right after it
 static std::unordered_set<uint64_t> s_upgraded_res;                // resources this add-on changed the format of
-static uint64_t s_effective_mask = 0;                               // rules currently changing a value
+static Mask s_effective_mask;                                       // rules currently changing a value
 static effect_uniform_variable s_enable_var = { 0 }, s_dump_var = { 0 };
 static const size_t INJECT_FLOATS = 64;                             // 256 bytes, 16 float4 registers
 static std::vector<Inject> s_injects;
@@ -250,7 +262,7 @@ static void collect_rules(effect_runtime *runtime)
 		}
 		const bool read = std::strcmp(source, "read") == 0;
 		if (!read && std::strcmp(source, "patch") != 0) return;
-		if (s_rules.size() >= 64) { logf("BlancoVision.addon: more than 64 rules, ignoring the rest"); return; }
+		if (s_rules.size() >= MAX_RULES) { logf("BlancoVision.addon: more than %zu rules, ignoring the rest", MAX_RULES); return; }
 		Rule r; r.var = var; r.read = read;
 		char text[64];
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_group", text)) r.group = text;
@@ -342,9 +354,9 @@ static void refresh_rules(effect_runtime *runtime, command_list *, resource_view
 		else if (r.op == 2) { neutral = true; for (int k = 0; k < r.count; ++k) if (r.value[k] != 0.0f) neutral = false; }
 		r.effective = r.active && !neutral;
 	}
-	s_effective_mask = 0;
+	s_effective_mask.clear();
 	for (size_t i = 0; i < s_rules.size(); ++i)
-		if (s_rules[i].effective) s_effective_mask |= 1ull << i;
+		if (s_rules[i].effective) s_effective_mask.set(i);
 }
 
 // ---------------------------------------------------------------------------- 1. shader replacement
@@ -483,7 +495,7 @@ static void on_draw_any(command_list *cmd)
 		if (!r.effective) continue; // neutral rules never claim a buffer, so other add-ons keep it
 		const uint64_t buf = st.cb[r.slot];
 		if (buf == 0 || !group_matches(r.group, st.ps_hash)) continue;
-		s_targets[buf] |= 1ull << i;
+		s_targets[buf].set(i);
 		// Sub-range base for apply() to shift the rule offset by. Zero for a plain bind.
 		s_base[buf] = st.cb_first[r.slot];
 	}
@@ -630,26 +642,26 @@ static bool on_draw_indexed(command_list *cmd, uint32_t, uint32_t, uint32_t, int
 
 // Rule bits for this buffer, masked to the rules currently changing a value. A buffer stops being
 // claimed as soon as its slider returns to neutral.
-static uint64_t targeted(uint64_t buf)
+static Mask targeted(uint64_t buf)
 {
 	const auto tt = s_targets.find(buf);
-	return tt != s_targets.end() ? (tt->second & s_effective_mask) : 0;
+	return tt != s_targets.end() ? (tt->second & s_effective_mask) : Mask();
 }
 
 // Apply the rules that target this buffer to CPU memory holding bytes [offset, offset + size) of it.
 static void apply(uint64_t buf, float *data, uint64_t offset, uint64_t size, uint64_t total)
 {
-	const uint64_t mask = targeted(buf);
+	const Mask mask = targeted(buf);
 	if (s_dump)
 	{
 		Snapshot &last = s_last[buf];
 		last.total = total;
 		last.floats.assign(data, data + (size / 4 < DUMP_FLOATS ? size / 4 : DUMP_FLOATS));
 	}
-	if (mask == 0 || !s_enabled) return;
+	if (!mask.any() || !s_enabled) return;
 	for (size_t i = 0; i < s_rules.size(); ++i)
 	{
-		if ((mask & (1ull << i)) == 0) continue;
+		if (!mask.test(i)) continue;
 		Rule &r = s_rules[i];
 		if (!r.effective || (r.size != 0 && static_cast<uint64_t>(r.size) != total)) continue;
 		const auto bt = s_base.find(buf);
@@ -673,7 +685,7 @@ static void on_map_buffer_region(device *, resource res, uint64_t offset, uint64
 {
 	if (access == map_access::read_only || data == nullptr || *data == nullptr) return;
 	std::lock_guard<std::mutex> lock(s_mutex);
-	if (targeted(res.handle) == 0 && !s_dump) return;
+	if (!targeted(res.handle).any() && !s_dump) return;
 	s_mapped[res.handle] = { *data, offset };
 }
 static void on_unmap_buffer_region(device *dev, resource res)
@@ -689,7 +701,7 @@ static void on_unmap_buffer_region(device *dev, resource res)
 static bool on_update_buffer_region(device *dev, const void *data, resource res, uint64_t offset, uint64_t size)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
-	if (targeted(res.handle) == 0 && !s_dump) return false;
+	if (!targeted(res.handle).any() && !s_dump) return false;
 	const resource_desc desc = dev->get_resource_desc(res);
 	const uint64_t total = desc.type == resource_type::buffer ? desc.buffer.size : 0;
 	// Size is UINT64_MAX when the app passes a null box. Clamp, or apply() reads past small buffers.
@@ -702,7 +714,7 @@ static bool on_update_buffer_region(device *dev, const void *data, resource res,
 	if (scratch.empty()) return false;
 	std::memcpy(scratch.data(), data, scratch.size() * sizeof(float));
 	apply(res.handle, scratch.data(), offset, size, total);
-	if (targeted(res.handle) == 0 || !s_enabled) return false; // dump only, nothing was patched
+	if (!targeted(res.handle).any() || !s_enabled) return false; // dump only, nothing was patched
 	// This goes to the original immediate context, so it does not re-enter this handler.
 	dev->update_buffer_region(scratch.data(), res, offset, size);
 	return true; // the patched copy has been uploaded; suppress the original
@@ -714,7 +726,7 @@ static bool on_update_buffer_region_command(command_list *cmd, const void *data,
 {
 	device *const dev = cmd->get_device();
 	std::lock_guard<std::mutex> lock(s_mutex);
-	if (targeted(res.handle) == 0 && !s_dump) return false;
+	if (!targeted(res.handle).any() && !s_dump) return false;
 	const resource_desc desc = dev->get_resource_desc(res);
 	const uint64_t total = desc.type == resource_type::buffer ? desc.buffer.size : 0;
 	if (total == 0 || offset >= total) return false;
