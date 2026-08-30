@@ -577,9 +577,13 @@ static void log_copy(command_list *cmd, resource source, resource dest, const ch
 		dd.texture.width, dd.texture.height);
 }
 // Exact match only. A blanket rule would also catch UI and scratch surfaces and break them.
-static bool on_create_resource(device *, resource_desc &desc, subresource_data *, resource_usage)
+static bool on_create_resource(device *, resource_desc &desc, subresource_data *, resource_usage initial)
 {
 	if (!s_hdr_upgrade || desc.type != resource_type::texture_2d) return false;
+	// A swap chain back buffer reaches this hook looking like any other full screen BGRA8 render
+	// target. Upgrading it leaves DXGI presenting a float buffer as plain sRGB, which is a black
+	// screen, so leave anything that presents alone and take only the intermediate targets.
+	if ((static_cast<uint32_t>(initial) & static_cast<uint32_t>(resource_usage::general)) != 0) return false;
 	if (desc.texture.format != format::b8g8r8a8_unorm && desc.texture.format != format::b8g8r8a8_typeless) return false;
 	if (desc.texture.levels != 1 || desc.texture.depth_or_layers != 1 || desc.texture.samples != 1) return false;
 	if (desc.texture.width < 1280 || desc.texture.height < 720) return false;
