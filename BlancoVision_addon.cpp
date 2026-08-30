@@ -91,6 +91,12 @@ struct Rule
 	float when_range[2] = { 0, 0 };
 	float value[4] = { 0, 0, 0, 0 }, readback[16] = { 0 };
 	bool have_readback = false;
+	// Diagnostics. A rule can be live and still touch nothing, because no shader binds a buffer of
+	// that size at that register, or because the group excludes every shader that does. Without a
+	// count there is no way to tell that apart from a setting the game ignores.
+	char name[64] = "";
+	uint64_t writes = 0;      // times this rule changed bytes on their way to the GPU
+	bool seen_buffer = false; // a matching buffer was bound by a matching draw at least once
 };
 // One add-on owned cbuffer, filled from the effect once a frame.
 struct Inject { effect_uniform_variable var = { 0 }; int offset = 0, count = 1; };
@@ -264,6 +270,7 @@ static void collect_rules(effect_runtime *runtime)
 		if (!read && std::strcmp(source, "patch") != 0) return;
 		if (s_rules.size() >= MAX_RULES) { logf("BlancoVision.addon: more than %zu rules, ignoring the rest", MAX_RULES); return; }
 		Rule r; r.var = var; r.read = read;
+		runtime->get_uniform_variable_name(var, r.name);
 		char text[64];
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_group", text)) r.group = text;
 		runtime->get_annotation_int_from_uniform_variable(var, "bv_slot", &r.slot, 1);
@@ -496,6 +503,7 @@ static void on_draw_any(command_list *cmd)
 		const uint64_t buf = st.cb[r.slot];
 		if (buf == 0 || !group_matches(r.group, st.ps_hash)) continue;
 		s_targets[buf].set(i);
+		s_rules[i].seen_buffer = true;
 		// Sub-range base for apply() to shift the rule offset by. Zero for a plain bind.
 		s_base[buf] = st.cb_first[r.slot];
 	}
@@ -676,9 +684,10 @@ static void apply(uint64_t buf, float *data, uint64_t offset, uint64_t size, uin
 			if (v < r.when_range[0] || v > r.when_range[1]) continue;
 		}
 		float *p = data + first;
-		if (r.read) { for (int k = 0; k < r.count; ++k) r.readback[k] = p[k]; r.have_readback = true; continue; }
+		if (r.read) { for (int k = 0; k < r.count; ++k) r.readback[k] = p[k]; r.have_readback = true; ++r.writes; continue; }
 		for (int k = 0; k < r.count; ++k)
 			p[k] = r.op == 1 ? p[k] * r.value[k] : r.op == 2 ? p[k] + r.value[k] : r.value[k];
+		++r.writes;
 	}
 }
 static void on_map_buffer_region(device *, resource res, uint64_t offset, uint64_t, map_access access, void **data)
@@ -779,6 +788,38 @@ static void draw_overlay(effect_runtime *runtime)
 	ImGui::SetItemTooltip("DXGI refuses every HDR colour space on the blit model swap chain the game asks for.");
 	if (ImGui::Checkbox("RGBA16F scRGB presentation", &s_hdr_float)) save = true;
 	if (ImGui::Checkbox("Upgrade 8 bit composite targets to float", &s_hdr_upgrade)) save = true;
+
+	if (ImGui::CollapsingHeader("Which settings are reaching the game"))
+	{
+		ImGui::TextWrapped("Move a slider off its default, then look here. A rule that never finds a "
+			"buffer has the wrong register or size for this build. One that finds a buffer but never "
+			"writes is sitting at its neutral value, which is normal until you move it.");
+		unsigned live = 0, idle = 0, missing = 0;
+		if (ImGui::BeginTable("bvdiag", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("setting");
+			ImGui::TableSetupColumn("register");
+			ImGui::TableSetupColumn("writes");
+			ImGui::TableHeadersRow();
+			for (const Rule &r : s_rules)
+			{
+				const bool no_buffer = !r.seen_buffer;
+				if (no_buffer) ++missing; else if (r.writes != 0) ++live; else ++idle;
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				if (no_buffer) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", r.name);
+				else if (r.writes != 0) ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f), "%s", r.name);
+				else ImGui::TextDisabled("%s", r.name);
+				ImGui::TableNextColumn();
+				ImGui::Text("b%d/%d", r.slot, r.size);
+				ImGui::TableNextColumn();
+				if (no_buffer) ImGui::TextUnformatted("no such buffer");
+				else ImGui::Text("%llu", static_cast<unsigned long long>(r.writes));
+			}
+			ImGui::EndTable();
+		}
+		ImGui::Text("%u writing, %u idle at their default, %u never found a buffer", live, idle, missing);
+	}
 
 	ImGui::Separator();
 	if (ImGui::Button("Reload BlancoVision.addon.ini")) load_ini();

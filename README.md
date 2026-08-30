@@ -43,6 +43,10 @@ The add-on registers its own window in the ReShade overlay, under the add-on lis
 rules and inject uniforms it picked up, how many shaders it has replaced, and every hash group with
 its size, so you can see at a glance whether a rule is switched off because its group is empty.
 
+Under **Which settings are reaching the game** it lists every rule with the number of times it has
+changed bytes on their way to the GPU. Green is writing, grey is sitting at its default, red never
+saw a buffer of that size at that register on this build and is the one to go fix.
+
 The settings that live in the ini are editable there and saved back to the file when you change one:
 shader replacement, the injection register and group, and the HDR switches. Rules themselves stay in
 the effect panel, where ReShade already draws a widget for every uniform and saves the values into
@@ -89,7 +93,7 @@ uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offse
     bv_when_offset = 17; bv_when = "LightRadiusRange"; ui_type = "color"; > = float3(1.0, 0.72, 0.42);
 ```
 
-`examples/BlancoVision_Control.fx` is a worked panel with about fifty rules on it: the postfx
+`examples/BlancoVision_Control.fx` is a worked panel with about ninety five rules on it: the postfx
 composite, the FXAA pass, the timecycle lighting globals, every artificial light, the sun pass,
 cascade shadow bias, the shadow blur kernel, AO darkness and reach, puddles and rain ripples, the
 reflection mip count and fog intensity. Every offset in it came out of the game's own shaders
@@ -119,7 +123,7 @@ moving it back hands the buffer over again.
 
 `BlancoVision.addon.ini` lives next to `ReShade.ini`.
 
-`[Groups]` holds named lists of shader hashes, CRC32 of the DXBC, the same hash REST uses. A rule
+`[Groups]` holds named lists of shader hashes, CRC32 of the shader's DXBC bytecode. A rule
 with no group matches every pixel shader. A group that exists but is empty matches nothing, which is
 how you keep an unfinished rule switched off.
 
