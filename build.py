@@ -15,13 +15,17 @@ SDK = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'sdk'
 OUT = ROOT / 'BlancoVision.addon'
 OBJ = ROOT / 'build'
 
-# CI puts cl.exe on PATH itself (ilammy/msvc-dev-cmd), so vcvars is only needed locally.
-VCVARS = None if shutil.which('cl') else next((p for p in (
-    r'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat',
-    r'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat',
-) if Path(p).exists()), None)
-if VCVARS is None and shutil.which('cl') is None:
-    raise SystemExit('no MSVC found: install the VS 2022 Build Tools C++ workload, or run from a developer prompt')
+# vswhere ships at this fixed path with every VS install, the GitHub runners included, so the same
+# lookup works locally and in CI. Skipped when cl.exe is already on PATH (a developer prompt).
+VSWHERE = Path(r'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe')
+VCVARS = None
+if shutil.which('cl') is None:
+    root = subprocess.run([str(VSWHERE), '-latest', '-products', '*', '-property', 'installationPath',
+                           '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'],
+                          capture_output=True, text=True).stdout.strip() if VSWHERE.exists() else ''
+    VCVARS = Path(root) / 'VC' / 'Auxiliary' / 'Build' / 'vcvars64.bat' if root else None
+    if VCVARS is None or not VCVARS.exists():
+        raise SystemExit('no MSVC found: install the VS 2022 Build Tools C++ workload, or run from a developer prompt')
 
 OBJ.mkdir(exist_ok=True)
 bat = OBJ / 'build.bat'
