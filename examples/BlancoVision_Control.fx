@@ -197,7 +197,7 @@ uniform float3 RippleData < bv = "patch"; bv_slot = 9; bv_size = 32; bv_offset =
 // b5 is postfx_cbuffer at 1488 bytes in the composite passes and more_stuff at 128 everywhere else.
 uniform float ReflectionMipCount < bv = "patch"; bv_slot = 5; bv_size = 128; bv_offset = 26; bv_op = "set"; bv_switch = "OverrideReflectionMip";
     ui_type = "slider"; ui_min = 1.0; ui_max = 9.0; ui_step = 1.0; ui_label = "Reflection mip count";
-    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This is the reflection lever with precedent (docs/13-shader-levers.md)."; ui_category = "Reflections and fog (b5, b2)"; > = 9.0;
+    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This changes how a reflection looks; what it contains is the timecycle range in docs/13-shader-levers.md, which is a pack change rather than a slider."; ui_category = "Reflections and fog (b5, b2)"; > = 9.0;
 uniform bool OverrideReflectionMip < ui_label = "Override the reflection mip count"; ui_category = "Reflections and fog (b5, b2)"; > = false;
 uniform float GlobalFogIntensity < bv = "patch"; bv_slot = 2; bv_size = 336; bv_offset = 73; bv_op = "mul";
     ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Fog intensity";
