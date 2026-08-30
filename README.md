@@ -89,8 +89,16 @@ uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offse
     bv_when_offset = 17; bv_when = "LightRadiusRange"; ui_type = "color"; > = float3(1.0, 0.72, 0.42);
 ```
 
-`examples/BlancoVision_Control.fx` has that section filled in, along with the offsets for light
-position, direction, intensity and radius, and the sun shadow parameters.
+`examples/BlancoVision_Control.fx` is a worked panel with about fifty rules on it: the postfx
+composite, the FXAA pass, the timecycle lighting globals, every artificial light, the sun pass,
+cascade shadow bias, the shadow blur kernel, AO darkness and reach, puddles and rain ripples, the
+reflection mip count and fog intensity. Every offset in it came out of the game's own shaders
+rather than a wiki, so it is MIT like the rest of the repo.
+
+Finding your own offsets does not need the dump switch either. `D3DDisassemble` prints an RDEF
+block naming every cbuffer variable with its byte offset and marking the unused ones, and the
+instruction stream tells you what each one does. Four registers in GTA V carry more than one
+buffer, which is why `bv_size` exists and why every rule should set it.
 
 Use the custom `bv` annotation, not ReShade's `source`. A uniform with a `source` annotation is
 special to ReShade and gets no widget drawn, which hides your whole panel.

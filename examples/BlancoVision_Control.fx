@@ -148,6 +148,65 @@ uniform float3 RimLightColour < bv = "patch"; bv_slot = 11; bv_size = 96; bv_off
     ui_tooltip = "Marked unused in the shaders shipped with this build, so it may do nothing."; ui_category = "Peds (b11)"; > = float3(1.0, 1.0, 1.0);
 
 
+// ---- Ambient occlusion generation, ssao_locals at b12, 352 bytes --------------------------------
+// The application curve is a dead end (docs/13-shader-levers.md): the occlusion is generated at a
+// ten centimetre radius, so darkening it further reads as nothing. These are the generation side,
+// the same numbers hbaosettings.xml feeds, except live instead of needing a restart.
+uniform float SSAOStrength < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 16; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO darkness";
+    ui_tooltip = "g_SSAOStrength, read by 14 of the AO passes. Multiplies how dark the occlusion gets, not how far it reaches."; ui_category = "Ambient occlusion (b12)"; > = 1.0;
+uniform float4 SSAOFalloffKernel < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset = 28; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.1; ui_max = 8.0; ui_step = 0.05; ui_label = "AO falloff and kernel";
+    ui_tooltip = "FallOffAndKernelParam, the reach side. Raising the kernel components is the closest the game gets to a ReShade AO radius. Watch a corner while dragging; the components are not individually named in the shader."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 AmbientOcclusionEffect < bv = "patch"; bv_slot = 5; bv_size = 128; bv_offset = 8; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO effect on ambient";
+    ui_tooltip = "gAmbientOcclusionEffect in more_stuff. How much the AO term is allowed to darken the ambient and the reflection."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+
+// ---- Shadows -----------------------------------------------------------------------------------
+// soft_shadow_locals b10 (64 bytes) is the shadow blur; b10 also carries puddle_locals at 48, so
+// the size matters. csmshader b6 (784) is the cascade setup, and b6 also holds the 32 byte FXAA
+// buffer that the postfx section above patches.
+uniform float4 ShadowKernel < bv = "patch"; bv_slot = 10; bv_size = 64; bv_offset = 8; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.25; ui_max = 6.0; ui_step = 0.05; ui_label = "Shadow blur kernel";
+    ui_tooltip = "kernelParam, the filter the soft shadow pass samples with. Widening it softens shadow edges without touching resolution. This is where softness comes from, never a post blur."; ui_category = "Shadows (b10, b6, b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 CSMDepthBias < bv = "patch"; bv_slot = 6; bv_size = 784; bv_offset = 48; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Cascade depth bias";
+    ui_tooltip = "gCSMDepthBias, one value per cascade. Lower pulls contact shadows back onto their object; too low and surfaces shadow themselves in stripes."; ui_category = "Shadows (b10, b6, b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 CSMSlopeBias < bv = "patch"; bv_slot = 6; bv_size = 784; bv_offset = 52; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Cascade slope bias";
+    ui_tooltip = "gCSMDepthSlopeBias, the same per cascade but scaled by the surface angle. This is the one that fixes shadow acne on sloped ground."; ui_category = "Shadows (b10, b6, b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 CSMShadowParams < bv = "patch"; bv_slot = 6; bv_size = 784; bv_offset = 60; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Cascade shadow params";
+    ui_tooltip = "gCSMShadowParams, read by 56 shaders. Unnamed components, so drag one at a time and watch."; ui_category = "Shadows (b10, b6, b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 ParticleShadowParams < bv = "patch"; bv_slot = 12; bv_size = 32; bv_offset = 4; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Particle shadow params";
+    ui_tooltip = "particleShadowsParams in cascadeshadows_recieving_locals. How hard smoke and rain take shadow."; ui_category = "Shadows (b10, b6, b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
+
+// ---- Roads and wet surfaces, puddle_locals b10 (48) and ripple_locals b9 (32) -------------------
+uniform float4 PuddleScaleRange < bv = "patch"; bv_slot = 10; bv_size = 48; bv_offset = 0; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Puddle scale and range";
+    ui_tooltip = "g_Puddle_ScaleXY_Range. How big the puddle mask tiles and how far it reaches."; ui_category = "Roads and rain (b10, b9)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 PuddleParams < bv = "patch"; bv_slot = 10; bv_size = 48; bv_offset = 4; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Puddle depth and sharpness";
+    ui_tooltip = "g_PuddleParams. Wet road reflections are the strongest single thing a night scene has, so this is worth a pass at 0.5 and at 2."; ui_category = "Roads and rain (b10, b9)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float3 RippleData < bv = "patch"; bv_slot = 9; bv_size = 32; bv_offset = 0; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Rain ripple strength";
+    ui_tooltip = "RippleData, the rings rain punches into standing water."; ui_category = "Roads and rain (b10, b9)"; > = float3(1.0, 1.0, 1.0);
+
+// ---- Reflections and fog, more_stuff b5 (128) and misc_globals b2 -------------------------------
+// b5 is postfx_cbuffer at 1488 bytes in the composite passes and more_stuff at 128 everywhere else.
+uniform float ReflectionMipCount < bv = "patch"; bv_slot = 5; bv_size = 128; bv_offset = 26; bv_op = "set"; bv_switch = "OverrideReflectionMip";
+    ui_type = "slider"; ui_min = 1.0; ui_max = 9.0; ui_step = 1.0; ui_label = "Reflection mip count";
+    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This is the reflection lever with precedent (docs/13-shader-levers.md)."; ui_category = "Reflections and fog (b5, b2)"; > = 9.0;
+uniform bool OverrideReflectionMip < ui_label = "Override the reflection mip count"; ui_category = "Reflections and fog (b5, b2)"; > = false;
+uniform float GlobalFogIntensity < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 77; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Fog intensity";
+    ui_tooltip = "gGlobalFogIntensity. None of the eight containers mapped here read it, the world and sky shaders do, so judge it in the open rather than from the log."; ui_category = "Reflections and fog (b5, b2)"; > = 1.0;
+uniform float4 ParticleShadowBias < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 72; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Particle shadow bias";
+    ui_tooltip = "gGlobalParticleShadowBias. Moves smoke and dust out of their own shadow."; ui_category = "Reflections and fog (b5, b2)"; > = float4(1.0, 1.0, 1.0, 1.0);
+
+
 float4 PS_Nop(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { if (pos.x >= 0.0) discard; return 0.0; }
 
 technique BlancoVision_Control
