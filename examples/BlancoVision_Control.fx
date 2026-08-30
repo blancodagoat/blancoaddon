@@ -199,13 +199,33 @@ uniform float ReflectionMipCount < bv = "patch"; bv_slot = 5; bv_size = 128; bv_
     ui_type = "slider"; ui_min = 1.0; ui_max = 9.0; ui_step = 1.0; ui_label = "Reflection mip count";
     ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This is the reflection lever with precedent (docs/13-shader-levers.md)."; ui_category = "Reflections and fog (b5, b2)"; > = 9.0;
 uniform bool OverrideReflectionMip < ui_label = "Override the reflection mip count"; ui_category = "Reflections and fog (b5, b2)"; > = false;
-uniform float GlobalFogIntensity < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 77; bv_op = "mul";
+uniform float GlobalFogIntensity < bv = "patch"; bv_slot = 2; bv_size = 336; bv_offset = 73; bv_op = "mul";
     ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Fog intensity";
-    ui_tooltip = "gGlobalFogIntensity. None of the eight containers mapped here read it, the world and sky shaders do, so judge it in the open rather than from the log."; ui_category = "Reflections and fog (b5, b2)"; > = 1.0;
-uniform float4 ParticleShadowBias < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 72; bv_op = "mul";
-    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Particle shadow bias";
-    ui_tooltip = "gGlobalParticleShadowBias. Moves smoke and dust out of their own shadow."; ui_category = "Reflections and fog (b5, b2)"; > = float4(1.0, 1.0, 1.0, 1.0);
+    ui_tooltip = "gGlobalFogIntensity. The world build of misc_globals is 336 bytes and drops three floats the deferred one has, so every offset after them shifts: this is float 73 there and 77 in the 352 byte variant, which no shader reads."; ui_category = "Reflections and fog (b5, b2)"; > = 1.0;
+uniform float4 ReflectionTweaks < bv = "patch"; bv_slot = 3; bv_size = 960; bv_offset = 236; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Reflection tweaks (lit windows)";
+    ui_tooltip = "gReflectionTweaks. Read only by the emissive glass shaders, so this is the reflection on lit windows at night and nothing else. Narrower than the name suggests, and worth having anyway because lit glass is most of what a city skyline is after dark."; ui_category = "Reflections and fog (b5, b2)"; > = float4(1.0, 1.0, 1.0, 1.0);
 
+
+// ---- Water, water_globals b4 (272 bytes) and water_locals b11 (64) ------------------------------
+// docs/13-shader-levers.md names water as where the game looks most dated and where the shader owns
+// reflection, normals and depth at once. These are the globals behind it, and unlike most of this
+// panel they have plenty of readers: the counts below are from tools/cbmap.py on water.fxc.
+uniform float4 WaterAmbientColour < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset = 12; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Water ambient colour";
+    ui_tooltip = "gWaterAmbientColor, read by 9 of the water shaders. The colour water takes from the sky rather than from the sun, so this is what makes it read as blue, green or grey."; ui_category = "Water (b4, b11)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 WaterDirectionalColour < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset = 16; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Water sun colour";
+    ui_tooltip = "gWaterDirectionalColor. The sun's contribution, which is the specular glint off the surface."; ui_category = "Water (b4, b11)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 OceanParams0 < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset = 24; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Ocean params 0";
+    ui_tooltip = "gOceanParams0, read by 8 shaders. Wave shape and surface normal strength live here. Drag one component at a time while looking at open water."; ui_category = "Water (b4, b11)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 OceanParams1 < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset = 28; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Ocean params 1";
+    ui_tooltip = "gOceanParams1, read by 6."; ui_category = "Water (b4, b11)"; > = float4(1.0, 1.0, 1.0, 1.0);
+uniform float4 WaterFogParams < bv = "patch"; bv_slot = 11; bv_size = 64; bv_offset = 4; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Water clarity";
+    ui_tooltip = "FogParams in water_locals, read by 8. How fast the water fogs out with depth. Lower is clearer and shows the bottom, higher is murkier. Register b11 also carries the sun pass at 336 bytes and ped skin at 96, so the 64 is what keeps this off them."; ui_category = "Water (b4, b11)"; > = float4(1.0, 1.0, 1.0, 1.0);
 
 float4 PS_Nop(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { if (pos.x >= 0.0) discard; return 0.0; }
 

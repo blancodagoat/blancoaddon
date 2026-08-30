@@ -97,8 +97,14 @@ rather than a wiki, so it is MIT like the rest of the repo.
 
 Finding your own offsets does not need the dump switch either. `D3DDisassemble` prints an RDEF
 block naming every cbuffer variable with its byte offset and marking the unused ones, and the
-instruction stream tells you what each one does. Four registers in GTA V carry more than one
-buffer, which is why `bv_size` exists and why every rule should set it.
+instruction stream tells you what each one does.
+
+Two warnings from doing that across forty containers. Several registers carry more than one buffer,
+so `bv_size` is not optional. Worse, the same named buffer is not the same layout everywhere:
+GTA V's `misc_globals` is 352 bytes in the deferred passes and 336 in the world ones, with three
+floats missing from the middle, so an offset lifted from the wrong container points four bytes off
+and the rule silently does nothing. Take the size and the offset from a container whose shaders you
+actually want to reach, and check that something in it reads the variable.
 
 Use the custom `bv` annotation, not ReShade's `source`. A uniform with a `source` annotation is
 special to ReShade and gets no widget drawn, which hides your whole panel.
