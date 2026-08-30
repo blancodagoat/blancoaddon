@@ -140,6 +140,23 @@ python build.py
 Needs the VS 2022 Build Tools C++ workload. Output is `BlancoVision.addon` in the repo root. A
 prebuilt one is committed if you would rather not.
 
+## Where the numbers come from
+
+Every register, size and offset in the example panel was read out of GTA V's own shader containers
+with `D3DDisassemble`, and each one was checked to have shaders that actually read it before it got
+a slider. That matters for the licence: those are facts about Rockstar's shaders, discovered here,
+so the code around them is ours to give away.
+
+The rule the panel follows, if you extend it: another mod can tell you *what* is possible, and a
+feature list is not protectable, but the mechanism has to come from the game's own files rather
+than from someone's binary. Note where each fact came from as you go. A number with no recorded
+source is a number you cannot defend.
+
+Worth knowing before you go hunting: a lot of what looks like it must be a shader constant is
+plain data. GTA V's `visualsettings.dat` carries over a thousand keys, including reflection boosts,
+light cutoff distances and rim lighting, and several of them are the same value the panel patches
+live. Tune it on a slider, then write it into the file.
+
 ## Licence
 
 MIT, see `LICENSE`. The ReShade add-on SDK headers in `sdk/` are Copyright (C) Patrick Mours under
