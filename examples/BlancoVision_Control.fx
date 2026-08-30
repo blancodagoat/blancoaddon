@@ -76,8 +76,8 @@ uniform float3 ShadowTint < bv = "patch"; bv_group = "composite"; bv_slot = 5; b
 // POMFlags is dead in the shipped shaders, and heightScale/heightBias are per material, but this
 // global multiplies them all. It cannot create parallax where there is no height map.
 uniform float HeightScale < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 4; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Surface bumpiness (brick walls only)";
-    ui_tooltip = "Multiplies the global height scale that feeds every parallax material. Only affects surfaces the artists gave a height map, mostly brick and detailed decals. 1.0 is vanilla."; ui_category = "Surface bumpiness (live)"; > = 1.0;
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Parallax height (brick walls only)";
+    ui_tooltip = "Multiplies the global height scale that feeds every parallax material. Only affects surfaces the artists gave a height map, mostly brick and detailed decals. 1.0 is vanilla."; ui_category = "Roads and surfaces (b12)"; > = 1.0;
 uniform float AOStrength < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 6; bv_op = "set";
     ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.05; ui_label = "Corner shadows: how dark";
     ui_tooltip = "Scales the AO term around 1.0 before the game's fourth power curve. 1.0 is vanilla, 0 removes AO entirely, above 1 deepens contact shadows. Affects ambient and image based reflection only, never the direct sun term."; ui_category = "Corner shadows (live)"; > = 1.0;
@@ -128,24 +128,24 @@ uniform float ShadowBias < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset 
 // lights from head lights and coronas. Widen it to the full range to tint everything.
 uniform float2 LightRadiusRange < ui_type = "slider"; ui_min = 0.0; ui_max = 80.0; ui_step = 0.5;
     ui_label = "Only lights with a radius in this range";
-    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone."; ui_category = "Deferred lights (b12)"; > = float2(0.0, 80.0);
+    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone."; ui_category = "Street lights and lamps (b12)"; > = float2(0.0, 80.0);
 uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 12; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
-    ui_type = "color"; ui_label = "Light colour tint";
-    ui_tooltip = "Multiplies the light's own colour, so it tints rather than replaces. Warm sodium is roughly 1.0, 0.72, 0.42; cold LED roughly 0.85, 0.92, 1.0."; ui_category = "Deferred lights (b12)"; > = float3(1.0, 1.0, 1.0);
+    ui_type = "color"; ui_label = "Light colour";
+    ui_tooltip = "Multiplies the light's own colour, so it tints rather than replaces. Warm sodium is roughly 1.0, 0.72, 0.42; cold LED roughly 0.85, 0.92, 1.0."; ui_category = "Street lights and lamps (b12)"; > = float3(1.0, 1.0, 1.0);
 uniform float LightIntensity < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 15; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
     ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Light intensity";
-    ui_tooltip = "Brightness of the same lights. Under 1 dims them without touching their reach."; ui_category = "Deferred lights (b12)"; > = 1.0;
+    ui_tooltip = "Brightness of the same lights. Under 1 dims them without touching their reach."; ui_category = "Street lights and lamps (b12)"; > = 1.0;
 uniform float LightRadius < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 17; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
-    ui_type = "slider"; ui_min = 0.25; ui_max = 3.0; ui_step = 0.05; ui_label = "Light reach";
-    ui_tooltip = "How far the light carries. The gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range."; ui_category = "Deferred lights (b12)"; > = 1.0;
+    ui_type = "slider"; ui_min = 0.25; ui_max = 3.0; ui_step = 0.05; ui_label = "Light range";
+    ui_tooltip = "How far the light carries. The gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range."; ui_category = "Street lights and lamps (b12)"; > = 1.0;
 
 // ---- deferred_lighting_locals, register b11, 96 bytes: peds ------------------------------------
 uniform float3 SkinColourTweak < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 0; bv_op = "mul";
     ui_type = "color"; ui_label = "Skin colour";
-    ui_tooltip = "Subsurface tint on peds. The 96 byte size is what tells this buffer apart from the sun's, which shares register b11."; ui_category = "Peds (b11)"; > = float3(1.0, 1.0, 1.0);
+    ui_tooltip = "Subsurface tint on peds. The 96 byte size is what tells this buffer apart from the sun's, which shares register b11."; ui_category = "Peds and skin (b11)"; > = float3(1.0, 1.0, 1.0);
 uniform float3 RimLightColour < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 12; bv_op = "mul";
     ui_type = "color"; ui_label = "Rim light colour";
-    ui_tooltip = "Marked unused in the shaders shipped with this build, so it may do nothing."; ui_category = "Peds (b11)"; > = float3(1.0, 1.0, 1.0);
+    ui_tooltip = "Marked unused in the shaders shipped with this build, so it may do nothing."; ui_category = "Peds and skin (b11)"; > = float3(1.0, 1.0, 1.0);
 
 
 // ---- Ambient occlusion generation, ssao_locals at b12, 352 bytes --------------------------------
@@ -185,26 +185,26 @@ uniform float4 ParticleShadowParams < bv = "patch"; bv_slot = 12; bv_size = 32; 
 // ---- Roads and wet surfaces, puddle_locals b10 (48) and ripple_locals b9 (32) -------------------
 uniform float4 PuddleScaleRange < bv = "patch"; bv_slot = 10; bv_size = 48; bv_offset = 0; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Puddle scale and range";
-    ui_tooltip = "g_Puddle_ScaleXY_Range. How big the puddle mask tiles and how far it reaches."; ui_category = "Roads and rain (b10, b9)"; > = float4(1.0, 1.0, 1.0, 1.0);
+    ui_tooltip = "g_Puddle_ScaleXY_Range. How big the puddle mask tiles and how far it reaches."; ui_category = "Puddles and rain (b10, b9)"; > = float4(1.0, 1.0, 1.0, 1.0);
 uniform float4 PuddleParams < bv = "patch"; bv_slot = 10; bv_size = 48; bv_offset = 4; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Puddle depth and sharpness";
-    ui_tooltip = "g_PuddleParams. Wet road reflections are the strongest single thing a night scene has, so this is worth a pass at 0.5 and at 2."; ui_category = "Roads and rain (b10, b9)"; > = float4(1.0, 1.0, 1.0, 1.0);
+    ui_tooltip = "g_PuddleParams. Wet road reflections are the strongest single thing a night scene has, so this is worth a pass at 0.5 and at 2."; ui_category = "Puddles and rain (b10, b9)"; > = float4(1.0, 1.0, 1.0, 1.0);
 uniform float3 RippleData < bv = "patch"; bv_slot = 9; bv_size = 32; bv_offset = 0; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Rain ripple strength";
-    ui_tooltip = "RippleData, the rings rain punches into standing water."; ui_category = "Roads and rain (b10, b9)"; > = float3(1.0, 1.0, 1.0);
+    ui_tooltip = "RippleData, the rings rain punches into standing water."; ui_category = "Puddles and rain (b10, b9)"; > = float3(1.0, 1.0, 1.0);
 
 // ---- Reflections and fog, more_stuff b5 (128) and misc_globals b2 -------------------------------
 // b5 is postfx_cbuffer at 1488 bytes in the composite passes and more_stuff at 128 everywhere else.
 uniform float ReflectionMipCount < bv = "patch"; bv_slot = 5; bv_size = 128; bv_offset = 26; bv_op = "set"; bv_switch = "OverrideReflectionMip";
-    ui_type = "slider"; ui_min = 1.0; ui_max = 9.0; ui_step = 1.0; ui_label = "Reflection mip count";
-    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This changes how a reflection looks; what it contains is the timecycle range in docs/13-shader-levers.md, which is a pack change rather than a slider."; ui_category = "Reflections and fog (b5, b2)"; > = 9.0;
-uniform bool OverrideReflectionMip < ui_label = "Override the reflection mip count"; ui_category = "Reflections and fog (b5, b2)"; > = false;
+    ui_type = "slider"; ui_min = 1.0; ui_max = 9.0; ui_step = 1.0; ui_label = "Reflection sharpness (mip count)";
+    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This changes how a reflection looks; what it contains is the timecycle range in docs/13-shader-levers.md, which is a pack change rather than a slider."; ui_category = "Building reflections and fog (b5, b2)"; > = 9.0;
+uniform bool OverrideReflectionMip < ui_label = "Override the reflection mip count"; ui_category = "Building reflections and fog (b5, b2)"; > = false;
 uniform float GlobalFogIntensity < bv = "patch"; bv_slot = 2; bv_size = 336; bv_offset = 73; bv_op = "mul";
     ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Fog intensity";
-    ui_tooltip = "gGlobalFogIntensity. The world build of misc_globals is 336 bytes and drops three floats the deferred one has, so every offset after them shifts: this is float 73 there and 77 in the 352 byte variant, which no shader reads."; ui_category = "Reflections and fog (b5, b2)"; > = 1.0;
+    ui_tooltip = "gGlobalFogIntensity. The world build of misc_globals is 336 bytes and drops three floats the deferred one has, so every offset after them shifts: this is float 73 there and 77 in the 352 byte variant, which no shader reads."; ui_category = "Building reflections and fog (b5, b2)"; > = 1.0;
 uniform float4 ReflectionTweaks < bv = "patch"; bv_slot = 3; bv_size = 960; bv_offset = 236; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Reflection tweaks (lit windows)";
-    ui_tooltip = "gReflectionTweaks. Read only by the emissive glass shaders, so this is the reflection on lit windows at night and nothing else. Narrower than the name suggests, and worth having anyway because lit glass is most of what a city skyline is after dark."; ui_category = "Reflections and fog (b5, b2)"; > = float4(1.0, 1.0, 1.0, 1.0);
+    ui_tooltip = "gReflectionTweaks. Read only by the emissive glass shaders, so this is the reflection on lit windows at night and nothing else. Narrower than the name suggests, and worth having anyway because lit glass is most of what a city skyline is after dark."; ui_category = "Building reflections and fog (b5, b2)"; > = float4(1.0, 1.0, 1.0, 1.0);
 
 
 // ---- Water, water_globals b4 (272 bytes) and water_locals b11 (64) ------------------------------
@@ -259,21 +259,31 @@ uniform float4 SSAOExtra4 < bv = "patch"; bv_slot = 12; bv_size = 352; bv_offset
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "AO extra params 4";
     ui_tooltip = "gExtraParams4. FoliageStrength, MaxPixels and CutoffPixels are somewhere in these five."; ui_category = "Ambient occlusion (b12)"; > = float4(1.0, 1.0, 1.0, 1.0);
 
-// ---- Material specular and reflectivity, megashader_locals at b12 -------------------------------
-// Per material, uploaded per draw, so these scale a whole shader family at once. The layout differs
-// per family and so does the buffer size, which is what picks the family here: 48 bytes is the
-// normal_spec_reflect glass. The plain glass_reflect family is 32 bytes, which is also the size of
-// cascadeshadows_recieving_locals on the same register, so it is not addressable by size alone and
-// is left out. Another family sharing 48 would be caught too, so watch the frame, not the label.
-uniform float GlassReflectivity < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 8; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Glass reflectivity";
-    ui_tooltip = "reflectivePower on the normal_spec_reflect family, read by 12 shaders. How much of the reflection cube a window shows."; ui_category = "Materials (b12)"; > = 1.0;
-uniform float GlassSpecular < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 2; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Glass specular";
-    ui_tooltip = "specularIntensityMult on the same family. The hard highlight, as opposed to the mirrored image."; ui_category = "Materials (b12)"; > = 1.0;
-uniform float GlassBumpiness < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 7; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Glass bumpiness";
-    ui_tooltip = "bumpiness. Normal map strength, so it bends the reflection rather than brightening it."; ui_category = "Materials (b12)"; > = 1.0;
+// ---- Surfaces, megashader_locals at b12, 48 bytes ----------------------------------------------
+// Not a glass buffer. The 48 byte layout is shared by roads, walls, terrain, grass, foliage and
+// decals: normal_spec and its whole family, grass_fur, normal_spec_decal. Per material and uploaded
+// per draw, so one slider moves every surface in the frame that uses this layout.
+//
+//   0 specularFresnel   1 specularFalloffMult   2 specularIntensityMult
+//   4 to 6 specMapIntMask   7 bumpiness   8 varies, see the wetness slider
+uniform float SurfaceBumpiness < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 7; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Surface bumpiness";
+    ui_tooltip = "Normal map strength on roads, walls, dirt and foliage alike. This is the one that makes tarmac read as tarmac instead of a flat grey plane. Nothing is added, the normal maps are already there and this decides how much of them survives."; ui_category = "Roads and surfaces (b12)"; > = 1.0;
+uniform float SurfaceSpecular < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 2; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Surface specular";
+    ui_tooltip = "specularIntensityMult. How bright the highlight is. Pairs with bumpiness: the bumps decide where the highlight lands, this decides how much of it you see."; ui_category = "Roads and surfaces (b12)"; > = 1.0;
+uniform float SurfaceSpecularFalloff < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 1; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.1; ui_max = 4.0; ui_step = 0.05; ui_label = "Specular tightness";
+    ui_tooltip = "specularFalloffMult. Tightens the highlight to a hard glint or spreads it into a broad sheen, which is the difference between polished and matte at the same brightness."; ui_category = "Roads and surfaces (b12)"; > = 1.0;
+uniform float SurfaceFresnel < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 0; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.1; ui_max = 4.0; ui_step = 0.05; ui_label = "Surface fresnel";
+    ui_tooltip = "specularFresnel. How much the highlight depends on viewing angle. Lower makes a road shine when you look straight down at it, not only at a grazing angle."; ui_category = "Roads and surfaces (b12)"; > = 1.0;
+uniform float3 SpecMapMask < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 4; bv_op = "mul";
+    ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Specular map channels";
+    ui_tooltip = "specMapIntMask. Which channels of the material's specular map are read and how hard. Read by every shader in the family."; ui_category = "Roads and surfaces (b12)"; > = float3(1.0, 1.0, 1.0);
+uniform float SurfaceWetness < bv = "patch"; bv_slot = 12; bv_size = 48; bv_offset = 8; bv_op = "mul";
+    ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Road and surface wetness";
+    ui_tooltip = "Float 8 is wetnessMultiplier on nearly every family in this layout, which is why a reflectivity slider here did nothing visible: only normal_spec_cubemap_reflect calls that float reflectivePower. On normal_spec_decal_detail it is useTessellation instead, and multiplying a flag that is already 0 or 1 leaves it alone, so this is safe to drag."; ui_category = "Roads and surfaces (b12)"; > = 1.0;
 
 float4 PS_Nop(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { if (pos.x >= 0.0) discard; return 0.0; }
 
