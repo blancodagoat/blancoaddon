@@ -499,11 +499,13 @@ static void on_draw_any(command_list *cmd)
 	for (size_t i = 0; i < s_rules.size(); ++i)
 	{
 		const Rule &r = s_rules[i];
-		if (!r.effective) continue; // neutral rules never claim a buffer, so other add-ons keep it
 		const uint64_t buf = st.cb[r.slot];
 		if (buf == 0 || !group_matches(r.group, st.ps_hash)) continue;
-		s_targets[buf].set(i);
+		// Recorded before the neutral test, or a rule sitting at its default would report that its
+		// buffer does not exist, which is the one thing this flag is meant to rule out.
 		s_rules[i].seen_buffer = true;
+		if (!r.effective) continue; // neutral rules never claim a buffer, so other add-ons keep it
+		s_targets[buf].set(i);
 		// Sub-range base for apply() to shift the rule offset by. Zero for a plain bind.
 		s_base[buf] = st.cb_first[r.slot];
 	}
@@ -791,10 +793,12 @@ static void draw_overlay(effect_runtime *runtime)
 
 	if (ImGui::CollapsingHeader("Which settings are reaching the game"))
 	{
-		ImGui::TextWrapped("Move a slider off its default, then look here. A rule that never finds a "
-			"buffer has the wrong register or size for this build. One that finds a buffer but never "
-			"writes is sitting at its neutral value, which is normal until you move it.");
+		ImGui::TextWrapped("Red never saw its buffer bound: the register or the hash group is wrong "
+			"for this build, and no slider will ever move it. Grey is switched off or sitting at its "
+			"default, which is normal. Green is writing. A rule with the wrong bv_size reads as grey, "
+			"so move a slider before trusting one.");
 		unsigned live = 0, idle = 0, missing = 0;
+		std::string copy; // the same table as plain text, for pasting somewhere it can be read
 		if (ImGui::BeginTable("bvdiag", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("setting");
@@ -815,10 +819,18 @@ static void draw_overlay(effect_runtime *runtime)
 				ImGui::TableNextColumn();
 				if (no_buffer) ImGui::TextUnformatted("no such buffer");
 				else ImGui::Text("%llu", static_cast<unsigned long long>(r.writes));
+				char line[160];
+				std::snprintf(line, sizeof(line), "%-40s b%d/%-5d %s\n", r.name, r.slot, r.size,
+					no_buffer ? "no such buffer" : std::to_string(r.writes).c_str());
+				copy += line;
 			}
 			ImGui::EndTable();
 		}
-		ImGui::Text("%u writing, %u idle at their default, %u never found a buffer", live, idle, missing);
+		char tail[128];
+		std::snprintf(tail, sizeof(tail), "%u writing, %u off or at their default, %u never found a buffer", live, idle, missing);
+		ImGui::TextUnformatted(tail);
+		ImGui::SameLine();
+		if (ImGui::Button("Copy")) ImGui::SetClipboardText((copy + tail + "\n").c_str());
 	}
 
 	ImGui::Separator();
