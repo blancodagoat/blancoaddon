@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add MSVC to PATH
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build
+        run: python build.py
+
+      # The zip mirrors the ReShade folder, so it extracts straight over FiveM.app\plugins
+      # or over the folder holding ReShade.ini on a single player install.
+      - name: Stage
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage/reshade-shaders/Shaders | Out-Null
+          Copy-Item BlancoVision.addon, BlancoVision.addon.ini, README.md, LICENSE stage/
+          Copy-Item examples/BlancoVision_Control.fx stage/reshade-shaders/Shaders/
+          Compress-Archive -Path stage/* -DestinationPath BlancoVision-addon.zip
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: 'BlancoVision-addon.zip,BlancoVision.addon'
+          generateReleaseNotes: true
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          body: |
+            Drop the contents of `BlancoVision-addon.zip` next to `ReShade.ini`, which on FiveM is
+            `FiveM.app\plugins`. Needs the add-on build of ReShade 6.8.0 (API 20); an add-on built
+            against a newer API than the runtime is refused with error 1114.
+
+            Then enable **BlancoVision addon control** in the ReShade overlay. The add-on's own
+            window carries the settings that live in the ini and the counters that say whether it
+            picked anything up.
