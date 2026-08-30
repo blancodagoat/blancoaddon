@@ -37,6 +37,17 @@ shaders bind, with sizes and the first 256 floats, into `ReShade.log`. Toggle it
 and diff the log to find the offset you need. That is how every number in a working setup gets
 found, and it is the piece worth installing this for even if you use nothing else.
 
+## The overlay
+
+The add-on registers its own window in the ReShade overlay, under the add-on list. It shows how many
+rules and inject uniforms it picked up, how many shaders it has replaced, and every hash group with
+its size, so you can see at a glance whether a rule is switched off because its group is empty.
+
+The settings that live in the ini are editable there and saved back to the file when you change one:
+shader replacement, the injection register and group, and the HDR switches. Rules themselves stay in
+the effect panel, where ReShade already draws a widget for every uniform and saves the values into
+your preset.
+
 ## Requirements
 
 The add-on build of ReShade, version 6.8.0 or the API 20 equivalent. The SDK version has to match
@@ -87,7 +98,7 @@ An empty `Group` turns injection off.
 
 `[Replace]` and `[HDR]` switch shader replacement and an experimental HDR presentation path. The HDR
 switches are read when the swap chain is created, long before any effect exists, so they only take
-effect on the next launch.
+effect on the next launch. You can edit all of these in the overlay instead of the file.
 
 ## Build
 
@@ -101,4 +112,5 @@ prebuilt one is committed if you would rather not.
 ## Licence
 
 MIT, see `LICENSE`. The ReShade add-on SDK headers in `sdk/` are Copyright (C) Patrick Mours under
-BSD-3-Clause OR MIT and carry their own notices.
+BSD-3-Clause OR MIT. `imgui/` holds two headers from Dear ImGui v1.92.5 docking, Copyright (C) Omar
+Cornut, MIT. Both carry their own notices.

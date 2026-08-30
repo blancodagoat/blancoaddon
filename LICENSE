@@ -27,6 +27,10 @@ Third party notices
 The ReShade add-on SDK headers this builds against (tools/reshade-sdk/) are
 Copyright (C) Patrick Mours, SPDX-License-Identifier: BSD-3-Clause OR MIT.
 
+The two Dear ImGui headers in imgui/ are Copyright (c) 2014-2025 Omar Cornut, MIT licensed. They
+are the version the ReShade SDK requires (1.92.5, docking branch); no ImGui code is compiled in,
+the add-on calls through ReShade's imgui function table.
+
 The CRC32 algorithm and polynomial table are after Gary S. Brown (1986), whose
 notice reads: "You may use this program, or code or tables extracted from it,
 as desired without restriction." ReShade's examples carry the same code.

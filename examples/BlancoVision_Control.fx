@@ -10,15 +10,8 @@ uniform bool Enable < bv = "enable"; ui_label = "Apply patches"; ui_category = "
 uniform bool DumpConstants < bv = "dump"; ui_label = "Log constant buffers to ReShade.log";
     ui_tooltip = "Per (pixel shader hash, register): buffer size and its first 256 floats. Turn on, look at the scene, turn off, read ReShade.log. Each turn-on logs a fresh snapshot, so one tick per game state (clear noon, rain, interior, dusk) can be diffed."; ui_category = "BlancoVision addon"; > = false;
 
-// ---- HDR output path, docs/12-hdr-legacy.md ----------------------------------------------------
-// Both of these decide how the game presents, and presentation is settled when the swap chain is
-// created, long before this effect exists. Ticking one writes it to BlancoVision.addon.ini and it
-// takes effect on the next launch. The HDR grade itself (paper white, peak nits, tonemap bypass)
-// is made of shader constants and will be live, like every other slider here.
-uniform bool HDRFlipModel < bv = "hdr"; bv_key = "FlipModel"; ui_label = "Flip model swap chain";
-    ui_tooltip = "GTA V asks DXGI for a blit model swap chain (SWAP_EFFECT_DISCARD), and DXGI refuses every HDR colour space on those whatever the display can do. This asks for FLIP_DISCARD instead. Nothing else HDR works until this is on."; ui_category = "HDR output (next launch)"; > = false;
-uniform bool HDRFloat < bv = "hdr"; bv_key = "Float"; ui_label = "RGBA16F scRGB presentation";
-    ui_tooltip = "Presents in R16G16B16A16_FLOAT and asks ReShade for the scRGB colour space. Needs the flip model switch on as well. Until the postfx composite is patched the image will look wrong: the game is still writing display referred sRGB values into a linear buffer."; ui_category = "HDR output (next launch)"; > = false;
+// The two swap chain switches moved to the BlancoVision window in the ReShade overlay: they are
+// read when the swap chain is created, long before this effect exists, so they need the ini.
 
 // ---- postfx_fxaa, register b6 (32 bytes), the FXAA pass ----------------------------------------
 // Live HDR controls. The patched FXAA in mod/hdr/fxaa_hdr.hlsl reads paper white out of

@@ -21,7 +21,7 @@ OBJ.mkdir(exist_ok=True)
 bat = OBJ / 'build.bat'
 # forward slash on /Fo: a trailing backslash inside quotes escapes the quote
 bat.write_text('@echo off\ncall "' + VCVARS + '" >nul\n'
-               f'cl /nologo /std:c++17 /O2 /EHsc /W3 /LD "/I{SDK}" "/Fo{OBJ}/" '
+               f'cl /nologo /std:c++17 /O2 /EHsc /W3 /LD "/I{SDK}" "/I{ROOT / "imgui"}" "/Fo{OBJ}/" '
                f'"{SRC}" "/Fe:{OUT}" /link /DLL "/IMPLIB:{OBJ / "BlancoVision.lib"}"\n')
 subprocess.check_call(['cmd', '/d', '/c', str(bat)])  # /d skips cmd AutoRun
 print(f'{OUT} ({OUT.stat().st_size} bytes)')
