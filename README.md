@@ -54,6 +54,27 @@ shader replacement, the injection register and group, and the HDR switches. Rule
 the effect panel, where ReShade already draws a widget for every uniform and saves the values into
 your preset.
 
+## Other layers in the process
+
+ReShade runs every add-on's handler for a buffer upload and only ORs their answers, and the copy
+another add-on uploads goes straight to the original context, so it never comes back through this
+one. Two add-ons patching the same constants therefore cannot see each other and the last write
+wins. There is no API to enumerate other add-ons either.
+
+What can be established is which layers are loaded. On startup the add-on reads the process module
+list and reports, in its window and in the log, any other ReShade add-on (they have to be named
+`.addon*`), ENB, QuantV, and any `d3d11.dll` loaded from outside the Windows directory, which is a
+wrapper standing in front of the game. Only loaded modules count: a shader folder or a leftover
+preset next to `ReShade.ini` says a mod is installed, not that it is running, and a warning about
+something that is not there teaches people to ignore the window.
+
+Nothing switches itself off. Presence is not proof that anything is being fought over, and someone
+running both on purpose has to keep working. Each layer gets a line saying what it is and what that
+means here, and a button that holds the affected rules off: the `composite` group for a layer that
+owns the post pipeline, every patch for one that cannot be narrowed. The choice is written to
+`[Conflicts] Hold` in the ini, so it survives a restart, and the rules show as **held** rather than
+broken in the table.
+
 ## Requirements
 
 The add-on build of ReShade 6.6.0 or newer, which is every release since September 2025.

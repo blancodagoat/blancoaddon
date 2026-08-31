@@ -46,6 +46,7 @@
 #include <imgui.h>
 #include <reshade.hpp>
 #include <Windows.h>
+#include <tlhelp32.h>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -172,6 +173,22 @@ static Mask s_effective_mask;                                       // rules cur
 static std::vector<std::pair<std::string, bool>> s_effects;         // effect file name -> a technique of it is on
 static bool s_panel_on = true;                                      // any of them
 static effect_uniform_variable s_enable_var = { 0 }, s_dump_var = { 0 };
+// Another layer patching the same constants cannot be observed. ReShade runs every registered
+// handler for an upload and only ORs their "skip" results, and the copy the other one uploads goes
+// straight to the original context, so it never comes back through this add-on. The last write
+// wins and neither side can see the other. What can be seen is which layers are loaded, so this
+// reports them and leaves the decision alone: nothing switches itself off over a file name.
+struct Layer
+{
+	std::string module;   // what was found
+	const char *kind;     // what it is
+	const char *why;      // what that means for the rules here
+	const char *group;    // hash group its overlap falls in, "" when there is no narrowing it to one
+};
+static std::vector<Layer> s_layers;
+static HMODULE s_self = nullptr;
+static bool s_hold_all = false;                                     // user asked for every patch to stand down
+static std::unordered_set<std::string> s_hold_groups;               // ... or just the rules in these groups
 static const size_t INJECT_FLOATS = 64;                             // 256 bytes, 16 float4 registers
 static std::vector<Inject> s_injects;
 static bool s_inject_enable = true;
@@ -216,6 +233,16 @@ static void load_ini()
 		else if (section == "HDR" && key == "Float") s_hdr_float = val != "0";
 		else if (section == "HDR" && key == "DumpComposite") s_dump_shaders = val != "0";
 		else if (section == "HDR" && key == "UpgradeTargets") s_hdr_upgrade = val != "0";
+		else if (section == "Conflicts" && key == "Hold")
+		{
+			s_hold_all = false; s_hold_groups.clear();
+			for (size_t q = 0, e; q < val.size(); q = e + 1)
+			{
+				e = val.find(',', q); if (e == std::string::npos) e = val.size();
+				const std::string one = val.substr(q, e - q);
+				if (one == "all") s_hold_all = true; else if (!one.empty()) s_hold_groups.insert(one);
+			}
+		}
 	}
 	if (s_inject_slot < 0 || s_inject_slot >= 16)
 	{
@@ -230,7 +257,10 @@ static void load_ini()
 static void save_ini()
 {
 	const std::string path = base_path() + "BlancoVision.addon.ini";
+	std::string hold = s_hold_all ? "all" : "";
+	for (const std::string &g : s_hold_groups) { if (!hold.empty()) hold += ','; hold += g; }
 	const std::pair<const char *, std::string> keys[] = {
+		{ "Hold=", hold },
 		{ "Enable=", std::string(s_replace ? "1" : "0") },        // [Replace], first Enable in the file
 		{ "Slot=", std::to_string(s_inject_slot) },
 		{ "Group=", s_inject_group },
@@ -262,7 +292,60 @@ static void save_ini()
 	for (const std::string &l : lines) out << l << "\n";
 	if (!wrote_inject_enable) out << "\n[Inject]\nEnable=" << (s_inject_enable ? 1 : 0)
 		<< "\nSlot=" << s_inject_slot << "\nGroup=" << s_inject_group << "\n";
+	bool has_conflicts = false;
+	for (const std::string &l : lines) if (l.rfind("[Conflicts]", 0) == 0) has_conflicts = true;
+	if (!has_conflicts) out << "\n; Rules held off because another layer is loaded. \"all\", or hash group names.\n"
+		"[Conflicts]\nHold=" << hold << "\n";
 	logf("BlancoVision.addon: settings saved; swap chain switches apply on the next launch");
+}
+
+// Loaded modules, once per effect runtime init: by then ReShade has loaded its add-ons and any
+// d3d11 wrapper is long in. There is no ReShade API to enumerate other add-ons, so this reads the
+// module list, which finds them by the extension their file has to have anyway.
+//
+// Only what is loaded counts. An ENB shader folder or a leftover preset sitting next to ReShade.ini
+// says a mod is installed, not that it is running, and a warning about a layer that is not there is
+// worse than no warning: it teaches people to ignore the panel.
+static void scan_layers()
+{
+	s_layers.clear();
+	char windir[MAX_PATH] = "";
+	GetWindowsDirectoryA(windir, MAX_PATH);
+	const size_t windir_len = std::strlen(windir);
+	const HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
+	if (snap == INVALID_HANDLE_VALUE) { logf("BlancoVision.addon: cannot read the module list, other layers go unreported"); return; }
+	MODULEENTRY32 me = { sizeof(me) };
+	for (BOOL ok = Module32First(snap, &me); ok; ok = Module32Next(snap, &me))
+	{
+		if (me.hModule == s_self) continue;
+		std::string name = me.szModule, path = me.szExePath;
+		for (char &c : name) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+		const size_t dot = name.rfind('.');
+		const std::string ext = dot == std::string::npos ? std::string() : name.substr(dot);
+		if (ext == ".addon" || ext == ".addon32" || ext == ".addon64")
+			s_layers.push_back({ me.szModule, "another ReShade add-on",
+				"It can patch the same constant buffers. ReShade runs both of us for every upload and the "
+				"last write wins, and neither add-on can see the other's edit.", "" });
+		else if (name.rfind("enb", 0) == 0)
+			s_layers.push_back({ me.szModule, "ENB",
+				"It owns the post pipeline, so the composite rules here rewrite constants that may never "
+				"reach the screen. The lighting and shadow rules run before it and still apply.", "composite" });
+		else if (name.find("quantv") != std::string::npos)
+			s_layers.push_back({ me.szModule, "QuantV",
+				"It replaces large parts of the lighting, which is the same ground this panel covers. "
+				"Whichever writes last decides, and that is not fixed.", "" });
+		// ENB is usually a plain d3d11.dll beside the exe. The real one only ever loads out of the
+		// Windows directory, so a d3d11 from anywhere else is a wrapper sitting in front of the game.
+		else if (name == "d3d11.dll" && (windir_len == 0 || _strnicmp(path.c_str(), windir, windir_len) != 0))
+			s_layers.push_back({ me.szModule, "a d3d11.dll wrapper (usually ENB)",
+				"Something is standing in front of the game's own D3D11. If it is ENB it owns the post "
+				"pipeline, and the composite rules here may never reach the screen.", "composite" });
+	}
+	CloseHandle(snap);
+	for (const Layer &l : s_layers)
+		logf("BlancoVision.addon: %s found (%s). %s", l.kind, l.module.c_str(), l.why);
+	if (s_layers.empty())
+		logf("BlancoVision.addon: no other rendering layer loaded");
 }
 
 static bool group_matches(const std::string &group, uint32_t hash)
@@ -330,6 +413,7 @@ static void collect_rules(effect_runtime *runtime)
 			char effect[260] = "";
 			runtime->get_uniform_variable_effect_name(var, effect);
 			r.when = runtime->find_uniform_variable(effect, text);
+			if (r.when.handle == 0) logf("BlancoVision.addon: bv_when names \"%s\", which is not a uniform in %s; the gate is off", text, effect);
 		}
 		// A second gate, ANDed with the first. One is not enough when a register carries two
 		// different buffers of the same size: the radius that picks street lights out of the light
@@ -339,6 +423,7 @@ static void collect_rules(effect_runtime *runtime)
 			char effect[260] = "";
 			runtime->get_uniform_variable_effect_name(var, effect);
 			r.when2 = runtime->find_uniform_variable(effect, text);
+			if (r.when2.handle == 0) logf("BlancoVision.addon: bv_when2 names \"%s\", which is not a uniform in %s; the gate is off", text, effect);
 		}
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_switch", text))
 		{
@@ -346,6 +431,7 @@ static void collect_rules(effect_runtime *runtime)
 			// The switch lives in the same effect file as the rule
 			runtime->get_uniform_variable_effect_name(var, effect);
 			r.sw = runtime->find_uniform_variable(effect, text);
+			if (r.sw.handle == 0) logf("BlancoVision.addon: bv_switch names \"%s\", which is not a uniform in %s; the rule is always on", text, effect);
 		}
 		// A patch writes through Rule::value (4 floats); a read fills readback, wide enough for a matrix.
 		const int cap = read ? 16 : 4;
@@ -412,14 +498,15 @@ static void refresh_rules(effect_runtime *runtime)
 		if (r.read)
 		{
 			if (r.have_readback) runtime->set_uniform_value_float(r.var, r.readback, r.count);
-			r.active = r.effective = s_enabled && fx; // a read never writes, so it is always safe to run
+			r.active = r.effective = s_enabled && fx && !s_hold_all; // a read never writes, so it is always safe to run
 			continue;
 		}
 		bool on = true;
 		if (r.sw.handle != 0) runtime->get_uniform_value_bool(r.sw, &on, 1);
 		if (r.when.handle != 0) runtime->get_uniform_value_float(r.when, r.when_range, 2);
 		if (r.when2.handle != 0) runtime->get_uniform_value_float(r.when2, r.when2_range, 2);
-		r.active = s_enabled && on && fx;
+		const bool held = s_hold_all || (!r.group.empty() && s_hold_groups.count(r.group) != 0);
+		r.active = s_enabled && on && fx && !held;
 		runtime->get_uniform_value_float(r.var, r.value, r.count);
 		// A rule at its neutral value must not claim the buffer: claiming it takes over the upload and
 		// discards any other add-on edit to the same constants. Only rules that move a number intercept.
@@ -908,9 +995,39 @@ static void draw_overlay(effect_runtime *runtime)
 	std::lock_guard<std::mutex> lock(s_mutex);
 	bool save = false;
 
+	// Other layers in the process. Reported, never acted on by itself: presence is not proof that
+	// anything is being fought over, and a user running both on purpose must keep working.
+	if (!s_layers.empty())
+	{
+		ImGui::SeparatorText("Other layers loaded");
+		for (const Layer &l : s_layers)
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s (%s)", l.kind, l.module.c_str());
+			ImGui::TextWrapped("%s", l.why);
+			unsigned n = 0;
+			for (const Rule &r : s_rules) if (!r.read && (l.group[0] == 0 || r.group == l.group)) ++n;
+			const bool held = l.group[0] == 0 ? s_hold_all : s_hold_groups.count(l.group) != 0;
+			char label[160];
+			if (l.group[0] == 0)
+				std::snprintf(label, sizeof(label), held ? "Let all %u patches run again##%s" : "Hold all %u patches off##%s", n, l.module.c_str());
+			else
+				std::snprintf(label, sizeof(label), held ? "Let the %u \"%s\" rules run again##%s" : "Hold the %u \"%s\" rules off##%s", n, l.group, l.module.c_str());
+			if (ImGui::Button(label))
+			{
+				if (l.group[0] == 0) s_hold_all = !held;
+				else if (held) s_hold_groups.erase(l.group); else s_hold_groups.insert(l.group);
+				save = true;
+			}
+		}
+		if (ImGui::Button("Rescan")) scan_layers();
+		ImGui::Separator();
+	}
+
 	// The one question support keeps getting asked: is any of this reaching the game right now.
 	if (!s_panel_on && !s_rules.empty())
 		ImGui::TextColored(ImVec4(1, 0.6f, 0.2f, 1), "Off: the control effect's technique is switched off, so no rule is writing.");
+	if (s_hold_all)
+		ImGui::TextColored(ImVec4(1, 0.6f, 0.2f, 1), "Held: every patch is standing down, see \"Other layers loaded\".");
 
 	if (s_enable_var.handle != 0)
 	{
@@ -971,7 +1088,9 @@ static void draw_overlay(effect_runtime *runtime)
 			{
 				// Only a rule that has actually been exercised can be called broken, so everything
 				// still sitting at its default stays grey no matter what its registers say.
-				const char *fault = !r.seen_buffer ? "no buffer"
+				const bool held = s_hold_all || (!r.group.empty() && s_hold_groups.count(r.group) != 0);
+				const char *fault = held ? nullptr
+					: !r.seen_buffer ? "no buffer"
 					: r.writes != 0 ? nullptr
 					: r.tried == 0 ? nullptr : "never wrote";
 				if (fault != nullptr) ++broken; else if (r.writes != 0) ++live; else ++idle;
@@ -983,7 +1102,8 @@ static void draw_overlay(effect_runtime *runtime)
 				ImGui::TableNextColumn();
 				ImGui::Text("b%d/%d", r.slot, r.size);
 				ImGui::TableNextColumn();
-				if (fault != nullptr) ImGui::TextUnformatted(fault);
+				if (held) ImGui::TextDisabled("held");
+				else if (fault != nullptr) ImGui::TextUnformatted(fault);
 				else if (r.ambiguous) ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%llu, shared", static_cast<unsigned long long>(r.writes));
 				else ImGui::Text("%llu", static_cast<unsigned long long>(r.writes));
 				char line[160];
@@ -1009,6 +1129,7 @@ static void on_init_effect_runtime(effect_runtime *runtime)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
 	load_ini();
+	scan_layers();
 	if (s_hdr_float)
 	{
 		runtime->set_color_space(color_space::extended_srgb_linear);
@@ -1030,6 +1151,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 	{
 	case DLL_PROCESS_ATTACH:
 		if (!reshade::register_addon(hModule)) return FALSE;
+		s_self = hModule;
 		load_ini(); // the HDR switches are needed at create_swapchain, before any effect runtime
 		reshade::register_event<reshade::addon_event::create_pipeline>(on_create_pipeline);
 		reshade::register_event<reshade::addon_event::init_pipeline>(on_init_pipeline);
