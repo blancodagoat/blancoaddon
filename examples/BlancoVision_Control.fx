@@ -115,11 +115,11 @@ uniform float4 SunDirectionView < bv = "read"; bv_slot = 3; bv_size = 960; bv_of
 // artificial light pass at b12 (tools/disasm.py on the vanilla containers; b11 also carries a 96
 // byte buffer, hence bv_size).
 //
-// The register separates the two shaders. It does not separate their uploads, and those are what
-// a rule rewrites: one buffer is uploaded once per light, the sun among them, and at upload time
-// nothing says which of them the bytes are for. So every rule below reaches the sun pass too, and
-// the gates are the only thing holding them off it. The add-on logs the collision and marks these
-// rules "shared" when it sees the same buffer claimed at both registers.
+// The two passes declare the same cbuffer at the same size, which is not the same thing as sharing
+// one buffer: the game allocates them separately, so the register does separate the uploads and not
+// only the shaders. Checked rather than assumed. The add-on reports a buffer claimed at two
+// registers and has never reported this one, and a street light colour taken to full blue in
+// daylight leaves the sky and the sunlight untouched.
 uniform bool OverrideShadowFloor < ui_label = "Override how dark shadows go"; ui_category = "Sunlight and shadows"; ui_category_closed = true; > = false;
 uniform float ShadowFloor < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset = 39; bv_op = "set"; bv_switch = "OverrideShadowFloor";
     ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "How dark sun shadows go"; ui_category = "Sunlight and shadows"; > = 0.75;
@@ -133,17 +133,16 @@ uniform float ShadowBias < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset 
 // [4].y radius. The buffer is uploaded once per light, so the radius gate is what separates street
 // lights from head lights and coronas. Widen it to the full range to tint everything.
 //
-// The sun pass shares this buffer and reads [3] as its own colour, so these two gates are also
-// what keeps a street light slider off the sun. Both test a field a light defines and a
-// directional light has no use for. Neither low end may sit at zero: that is the value an unused
-// field carries, and letting it through is the sun changing brightness as the camera turns.
+// The two gates pick which lights a slider reaches, and nothing more: the size one by how far the
+// light carries, the brightness one by how strong it is. Both read the light's own fields before
+// any rule here writes them.
 uniform float2 LightRadiusRange < ui_type = "slider"; ui_min = 0.0; ui_max = 80.0; ui_step = 0.5;
     ui_units = " m";
     ui_label = "Which lights this section affects (size range)";
-    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone. Taking it to zero also lets the sun pass through, which is what makes the sky brighten as you look up."; ui_category = "Street lights and lamps"; ui_category_closed = true; > = float2(1.0, 80.0);
+    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone."; ui_category = "Street lights and lamps"; ui_category_closed = true; > = float2(0.0, 80.0);
 uniform float2 LightIntensityRange < ui_type = "drag"; ui_min = 0.0; ui_max = 100.0; ui_step = 0.01;
     ui_label = "Which lights this section affects (brightness range)";
-    ui_tooltip = "deferredLightParams[3].w, the light's own intensity, as a second gate beside the size one. A light with no brightness is not a light, so the low end is what rejects an upload that never filled this in. Leave the top end wide unless you want to pick out dim lights."; ui_category = "Street lights and lamps"; > = float2(0.01, 100.0);
+    ui_tooltip = "deferredLightParams[3].w, the light's own intensity, as a second gate beside the size one. Narrow it to reach only the bright lights or only the dim ones; leave it wide to reach every light the size gate lets through."; ui_category = "Street lights and lamps"; > = float2(0.0, 100.0);
 uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 12; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
     bv_when2_offset = 15; bv_when2 = "LightIntensityRange";
     ui_type = "color"; ui_label = "Street light colour";
@@ -155,7 +154,7 @@ uniform float LightIntensity < bv = "patch"; bv_slot = 12; bv_size = 336; bv_off
 uniform float LightRadius < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 17; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
     bv_when2_offset = 15; bv_when2 = "LightIntensityRange";
     ui_type = "slider"; ui_min = 0.25; ui_max = 3.0; ui_step = 0.05; ui_label = "Street light reach";
-    ui_tooltip = "How far the light carries. The size gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range. The brightness gate is read after the rule above has scaled it, which only matters if you take street light brightness to zero."; ui_category = "Street lights and lamps"; > = 1.0;
+    ui_tooltip = "How far the light carries. The size gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range. The brightness gate is read after the rule above has scaled it, which only matters if you take street light brightness to zero."; ui_category = "Street lights and lamps"; ui_units = " x"; > = 1.0;
 
 // ---- deferred_lighting_locals, register b11, 96 bytes: peds ------------------------------------
 uniform float3 SkinColourTweak < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 0; bv_op = "mul";

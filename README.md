@@ -126,16 +126,18 @@ float cannot tell apart.
 ### When one buffer carries two different things
 
 A register decides which rules claim a buffer. It cannot decide what an upload is for, because the
-upload happens before the draw that consumes it. GTA V's `lighting_locals` is the sun pass at `b11`
-and every artificial light at `b12`, and if both are the same 336 byte resource then nothing at the
-moment those bytes are written says which of the two layouts they are. Rules on both registers then
-fire on both kinds of upload, and because the gate is being asked about a float that means something
-else in the other layout, whether it passes moves with the scene: brightness that shifts as the
-camera turns.
+upload happens before the draw that consumes it. If one resource is filled by two passes with
+different things in it, rules on both registers fire on both kinds of upload, and because a gate is
+then being asked about a float that means something else in the other layout, whether it passes
+moves with the scene: brightness that shifts as the camera turns.
 
-The add-on writes that collision to `ReShade.log` the first time it sees it, naming the buffer, its
-size and the rule, and marks the rules involved **shared** in the table. The gates are what resolves
-it: find a float only the layout you meant holds, and gate on it.
+Two passes declaring the same cbuffer at the same size does not mean this is happening. GTA V's
+`lighting_locals` is declared identically by the sun pass at `b11` and by the artificial lights at
+`b12`, and the game still allocates a buffer for each, so the register separates the uploads there
+as well as the shaders. Assume nothing from the declarations: the add-on writes the collision to
+`ReShade.log` the first time it actually sees one, naming the buffer, its size and the rule, and
+marks the rules involved **shared** in the table. The gates are what resolves it: find a float only
+the layout you meant holds, and gate on it.
 
 `examples/BlancoVision_Control.fx` is a worked panel with about ninety five rules on it: the postfx
 composite, the FXAA pass, the timecycle lighting globals, every artificial light, the sun pass,
