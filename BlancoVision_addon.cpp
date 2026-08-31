@@ -29,11 +29,10 @@
 // head lights: gate on the light radius and set the range. bv_when2_offset plus bv_when2 add a
 // second such gate, ANDed with the first, for a buffer one float cannot tell apart.
 //
-// Content is all there is to go on. A register decides which rules claim a buffer, but the upload
-// happens before the draw that consumes it, so when one resource carries two different layouts
-// (GTA V's lighting_locals is the sun pass at b11 and every artificial light at b12) nothing at
-// upload time says which one these bytes are. That collision is logged and marked "shared" in the
-// add-on window; the gates are what resolves it.
+// Content is all there is to go on when one resource carries two different things. A register
+// decides which rules claim a buffer, but the upload happens before the draw that consumes it, so
+// nothing at upload time says which pass the bytes are for. That collision is logged and marked
+// "shared" in the add-on window; the gates are what resolves it.
 //
 // Shaders are also replaced by hash: the DXBC is CRC32-hashed at pipeline creation and swapped for
 // <ReShade base path>\BlancoVision\0x<hash>.cso when that file exists.
@@ -138,11 +137,12 @@ static std::unordered_map<uint64_t, uint32_t> s_pipeline_hash;      // pipeline 
 static std::unordered_map<command_list *, CmdState> s_cmd;
 // What a claimed buffer carries: which rules took it, at which registers, and the base of the
 // sub-range they were bound at. `slots` is the diagnosis for the one failure this add-on cannot see
-// through. GTA V uploads lighting_locals once per light and the sun pass takes the same buffer at
-// b11 that the artificial lights take at b12, so at upload time nothing says which of them the
-// bytes are for: the register decides who claims a buffer, never who an upload belongs to. More
-// than one bit here and the rules on both are firing on both, which is brightness that changes
-// with where the camera points, so it gets reported rather than left to be found by eye.
+// through: a single buffer that two passes fill with different things. The upload happens before
+// the draw that consumes it, so at the moment the bytes are written nothing says which pass they
+// are for, and the register decides who claims a buffer rather than who an upload belongs to. More
+// than one bit here and the rules on both registers are firing on both kinds of upload. Two passes
+// declaring the same cbuffer is not enough to cause it, the game usually allocates one buffer
+// each, so this is reported when it is actually seen rather than assumed from the shaders.
 struct Claim { Mask rules; uint32_t slots = 0; uint64_t base = 0; };
 static std::unordered_map<uint64_t, Claim> s_targets;               // buffer handle -> the above
 static std::unordered_map<uint64_t, uint64_t> s_buf_size;           // buffer handle -> byte size, so a claim can test bv_size
@@ -320,12 +320,18 @@ static void scan_layers()
 		if (me.hModule == s_self) continue;
 		std::string name = me.szModule, path = me.szExePath;
 		for (char &c : name) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-		const size_t dot = name.rfind('.');
-		const std::string ext = dot == std::string::npos ? std::string() : name.substr(dot);
-		if (ext == ".addon" || ext == ".addon32" || ext == ".addon64")
-			s_layers.push_back({ me.szModule, "another ReShade add-on",
+		// Every ReShade add-on exports NAME, and that is the only dependable mark. The file extension
+		// is not: an add-on can register itself from a plain .asi or .dll, as GTAVUpscaler.asi does,
+		// and testing the name would walk straight past the ones most worth reporting.
+		const char *const *const exported = reinterpret_cast<const char *const *>(GetProcAddress(me.hModule, "NAME"));
+		if (exported != nullptr && *exported != nullptr)
+		{
+			std::string label = me.szModule;
+			label += " \""; label += *exported; label += "\"";
+			s_layers.push_back({ label, "another ReShade add-on",
 				"It can patch the same constant buffers. ReShade runs both of us for every upload and the "
 				"last write wins, and neither add-on can see the other's edit.", "" });
+		}
 		else if (name.rfind("enb", 0) == 0)
 			s_layers.push_back({ me.szModule, "ENB",
 				"It owns the post pipeline, so the composite rules here rewrite constants that may never "
