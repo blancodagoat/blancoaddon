@@ -45,7 +45,9 @@ its size, so you can see at a glance whether a rule is switched off because its 
 
 Under **Which settings are reaching the game** it lists every rule with the number of times it has
 changed bytes on their way to the GPU. Green is writing, grey is sitting at its default, red never
-saw a buffer of that size at that register on this build and is the one to go fix.
+saw a buffer of that size at that register on this build and is the one to go fix. Amber, **shared**,
+means the buffer it writes to is also claimed at another register, so its uploads carry two layouts
+and the rule is firing on both; see below.
 
 The settings that live in the ini are editable there and saved back to the file when you change one:
 shader replacement, the injection register and group, and the HDR switches. Rules themselves stay in
@@ -97,6 +99,23 @@ uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offse
     bv_when_offset = 17; bv_when = "LightRadiusRange"; ui_type = "color"; > = float3(1.0, 0.72, 0.42);
 ```
 
+`bv_when2_offset` and `bv_when2` add a second such gate, ANDed with the first, for a buffer that one
+float cannot tell apart.
+
+### When one buffer carries two different things
+
+A register decides which rules claim a buffer. It cannot decide what an upload is for, because the
+upload happens before the draw that consumes it. GTA V's `lighting_locals` is the sun pass at `b11`
+and every artificial light at `b12`, and if both are the same 336 byte resource then nothing at the
+moment those bytes are written says which of the two layouts they are. Rules on both registers then
+fire on both kinds of upload, and because the gate is being asked about a float that means something
+else in the other layout, whether it passes moves with the scene: brightness that shifts as the
+camera turns.
+
+The add-on writes that collision to `ReShade.log` the first time it sees it, naming the buffer, its
+size and the rule, and marks the rules involved **shared** in the table. The gates are what resolves
+it: find a float only the layout you meant holds, and gate on it.
+
 `examples/BlancoVision_Control.fx` is a worked panel with about ninety five rules on it: the postfx
 composite, the FXAA pass, the timecycle lighting globals, every artificial light, the sun pass,
 cascade shadow bias, the shadow blur kernel, AO darkness and reach, puddles and rain ripples, the
@@ -119,7 +138,13 @@ actually want to reach, and check that something in it reads the variable.
 Use the custom `bv` annotation, not ReShade's `source`. A uniform with a `source` annotation is
 special to ReShade and gets no widget drawn, which hides your whole panel.
 
-Rules sitting at a neutral value do not claim the buffer they target. This matters if another add-on
+Switching the effect off switches the rules off. A technique the user has unticked, or ReShade's
+effects toggle key, stops every patch and unbinds the injection buffer, and the add-on window says
+so. That has to be asked for rather than inferred: ReShade keeps the uniforms of a switched off
+effect readable, so their values alone never say the panel is off.
+
+Rules sitting at a neutral value do not claim the buffer they target, and neither does a buffer whose
+size is not the `bv_size` asked for. This matters if another add-on
 patches the same constants: only a slider you have actually moved makes this one intercept, and
 moving it back hands the buffer over again.
 

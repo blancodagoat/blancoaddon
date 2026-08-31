@@ -26,7 +26,14 @@
 // bv_when_offset plus bv_when gate a patch on the buffer's own contents: the rule applies only
 // when the float at bv_when_offset falls inside the float2 uniform bv_when names. The same
 // cbuffer is uploaded once per light, so this is how one slider reaches street lights and not
-// head lights: gate on the light radius and set the range.
+// head lights: gate on the light radius and set the range. bv_when2_offset plus bv_when2 add a
+// second such gate, ANDed with the first, for a buffer one float cannot tell apart.
+//
+// Content is all there is to go on. A register decides which rules claim a buffer, but the upload
+// happens before the draw that consumes it, so when one resource carries two different layouts
+// (GTA V's lighting_locals is the sun pass at b11 and every artificial light at b12) nothing at
+// upload time says which one these bytes are. That collision is logged and marked "shared" in the
+// add-on window; the gates are what resolves it.
 //
 // Shaders are also replaced by hash: the DXBC is CRC32-hashed at pipeline creation and swapped for
 // <ReShade base path>\BlancoVision\0x<hash>.cso when that file exists.
@@ -83,26 +90,32 @@ static std::string base_path()
 // ---------------------------------------------------------------------------- state
 struct Rule
 {
-	effect_uniform_variable var = { 0 }, sw = { 0 }, when = { 0 };
+	effect_uniform_variable var = { 0 }, sw = { 0 }, when = { 0 }, when2 = { 0 };
 	bool read = false, active = false, effective = false; // effective: active AND not a no-op
 	std::string group;
+	int effect = -1;                                      // index into s_effects: a switched off effect stops writing
 	int slot = 0, offset = 0, count = 1, op = 0, size = 0; // op: 0 set, 1 mul, 2 add; size 0 = any
-	int when_offset = -1;                                 // < 0 = ungated
-	float when_range[2] = { 0, 0 };
+	int when_offset = -1, when2_offset = -1;              // < 0 = ungated
+	float when_range[2] = { 0, 0 }, when2_range[2] = { 0, 0 };
 	float value[4] = { 0, 0, 0, 0 }, readback[16] = { 0 };
 	bool have_readback = false;
+	// What this rule last wrote, and where. A "mul" that reads back its own output compounds, and
+	// the same bytes do reach here twice: a WRITE_NO_OVERWRITE remap hands back the buffer with our
+	// edit still in it, and an engine that keeps one struct and re-uploads it does the same.
+	uint64_t last_buf = 0;
+	float last_out[4] = { 0, 0, 0, 0 };
 	// Diagnostics. A rule can be live and still touch nothing, because no shader binds a buffer of
 	// that size at that register, or because the group excludes every shader that does. Without a
 	// count there is no way to tell that apart from a setting the game ignores.
 	char name[64] = "";
 	uint64_t writes = 0;      // times this rule changed bytes on their way to the GPU
 	uint64_t tried = 0;       // times it reached apply() while off its neutral value
-	uint64_t size_ok = 0;     // of those, times bv_size matched the buffer actually bound
-	bool seen_buffer = false; // a matching buffer was bound by a matching draw at least once
+	bool seen_buffer = false; // a buffer of the right size was bound by a matching draw at least once
+	bool ambiguous = false;   // its buffer is also claimed at another register, see Claim::slots
 };
 // One add-on owned cbuffer, filled from the effect once a frame.
 struct Inject { effect_uniform_variable var = { 0 }; int offset = 0, count = 1; };
-struct CmdState { uint32_t ps_hash = 0; uint64_t cb[16] = { 0 }; uint64_t cb_first[16] = { 0 }; uint64_t rtv = 0; };
+struct CmdState { uint32_t ps_hash = 0; uint64_t cb[16] = { 0 }; uint64_t cb_first[16] = { 0 }; uint64_t cb_size[16] = { 0 }; uint64_t rtv = 0; };
 struct Mapped { void *data; uint64_t offset; };
 // One bit per rule, recorded per constant buffer. Two words because a panel that covers lights,
 // shadows, AO, water and the postfx composite passes 64 rules on its own.
@@ -122,8 +135,17 @@ static std::vector<Rule> s_rules;                                   // at most M
 static std::unordered_map<std::string, std::unordered_set<uint32_t>> s_groups;
 static std::unordered_map<uint64_t, uint32_t> s_pipeline_hash;      // pipeline handle -> pixel shader crc32
 static std::unordered_map<command_list *, CmdState> s_cmd;
-static std::unordered_map<uint64_t, Mask> s_targets;                // buffer handle -> rule bitmask
-static std::unordered_map<uint64_t, uint64_t> s_base;               // buffer handle -> bound sub-range base, in floats
+// What a claimed buffer carries: which rules took it, at which registers, and the base of the
+// sub-range they were bound at. `slots` is the diagnosis for the one failure this add-on cannot see
+// through. GTA V uploads lighting_locals once per light and the sun pass takes the same buffer at
+// b11 that the artificial lights take at b12, so at upload time nothing says which of them the
+// bytes are for: the register decides who claims a buffer, never who an upload belongs to. More
+// than one bit here and the rules on both are firing on both, which is brightness that changes
+// with where the camera points, so it gets reported rather than left to be found by eye.
+struct Claim { Mask rules; uint32_t slots = 0; uint64_t base = 0; };
+static std::unordered_map<uint64_t, Claim> s_targets;               // buffer handle -> the above
+static std::unordered_map<uint64_t, uint64_t> s_buf_size;           // buffer handle -> byte size, so a claim can test bv_size
+static unsigned s_claim_conflicts = 0;                              // logged collisions, capped: pooled buffers repeat
 static std::unordered_map<uint64_t, Mapped> s_mapped;
 struct Snapshot { uint64_t total = 0; std::vector<float> floats; };
 static std::unordered_map<uint64_t, Snapshot> s_last;               // buffer handle -> last upload (dump mode)
@@ -139,9 +161,16 @@ static bool s_dump_shaders = false;
 // The composite writes an 8 bit intermediate, so a float back buffer needs that target upgraded too.
 static bool s_hdr_upgrade = false;
 static uint32_t s_upgraded = 0;
-static bool s_upgrade_pending = false;                             // set in create_resource, read by the init_resource right after it
+static thread_local bool s_upgrade_pending = false;                // set in create_resource, read by the init_resource right after it, on that same thread
 static std::unordered_set<uint64_t> s_upgraded_res;                // resources this add-on changed the format of
 static Mask s_effective_mask;                                       // rules currently changing a value
+// The panel is an ordinary effect, and ReShade keeps the uniforms of a switched off one readable,
+// so the values themselves never say the user turned it off. reshade_begin_effects stops firing
+// both when the technique is switched off and when the effects toggle key is pressed, which froze
+// every rule at its last value and left it writing. The refresh runs on reshade_present instead,
+// and asks for the state.
+static std::vector<std::pair<std::string, bool>> s_effects;         // effect file name -> a technique of it is on
+static bool s_panel_on = true;                                      // any of them
 static effect_uniform_variable s_enable_var = { 0 }, s_dump_var = { 0 };
 static const size_t INJECT_FLOATS = 64;                             // 256 bytes, 16 float4 registers
 static std::vector<Inject> s_injects;
@@ -244,10 +273,21 @@ static bool group_matches(const std::string &group, uint32_t hash)
 }
 
 // ---------------------------------------------------------------------------- rules from effect uniforms
+static int effect_index(effect_runtime *runtime, effect_uniform_variable var)
+{
+	char name[260] = "";
+	runtime->get_uniform_variable_effect_name(var, name);
+	for (size_t i = 0; i < s_effects.size(); ++i)
+		if (s_effects[i].first == name) return static_cast<int>(i);
+	s_effects.emplace_back(name, true);
+	return static_cast<int>(s_effects.size() - 1);
+}
+
 static void collect_rules(effect_runtime *runtime)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
-	s_rules.clear(); s_targets.clear(); s_injects.clear(); s_inject_upload = true;
+	s_rules.clear(); s_targets.clear(); s_injects.clear(); s_effects.clear();
+	s_claim_conflicts = 0; s_inject_upload = true;
 	s_enable_var = { 0 }; s_dump_var = { 0 };
 	runtime->enumerate_uniform_variables(nullptr, [](effect_runtime *runtime, effect_uniform_variable var) {
 		// < bv >, not < source >: a source annotation makes the uniform special and hides its widget.
@@ -262,6 +302,7 @@ static void collect_rules(effect_runtime *runtime)
 		if (std::strcmp(source, "inject") == 0)
 		{
 			Inject in; in.var = var; in.count = count > 16 ? 16 : count;
+			effect_index(runtime, var); // registers the effect, so injection stops with it
 			runtime->get_annotation_int_from_uniform_variable(var, "bv_offset", &in.offset, 1);
 			if (in.offset < 0 || static_cast<size_t>(in.offset + in.count) > INJECT_FLOATS)
 			{ logf("BlancoVision.addon: inject uniform at offset %d (%d floats) does not fit the buffer, ignored", in.offset, in.count); return; }
@@ -271,7 +312,7 @@ static void collect_rules(effect_runtime *runtime)
 		const bool read = std::strcmp(source, "read") == 0;
 		if (!read && std::strcmp(source, "patch") != 0) return;
 		if (s_rules.size() >= MAX_RULES) { logf("BlancoVision.addon: more than %zu rules, ignoring the rest", MAX_RULES); return; }
-		Rule r; r.var = var; r.read = read;
+		Rule r; r.var = var; r.read = read; r.effect = effect_index(runtime, var);
 		runtime->get_uniform_variable_name(var, r.name);
 		char text[64];
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_group", text)) r.group = text;
@@ -282,11 +323,22 @@ static void collect_rules(effect_runtime *runtime)
 			r.op = std::strcmp(text, "mul") == 0 ? 1 : std::strcmp(text, "add") == 0 ? 2 : 0;
 		if (!runtime->get_annotation_int_from_uniform_variable(var, "bv_when_offset", &r.when_offset, 1))
 			r.when_offset = -1;
+		if (!runtime->get_annotation_int_from_uniform_variable(var, "bv_when2_offset", &r.when2_offset, 1))
+			r.when2_offset = -1;
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_when", text))
 		{
 			char effect[260] = "";
 			runtime->get_uniform_variable_effect_name(var, effect);
 			r.when = runtime->find_uniform_variable(effect, text);
+		}
+		// A second gate, ANDed with the first. One is not enough when a register carries two
+		// different buffers of the same size: the radius that picks street lights out of the light
+		// uploads says nothing about the sun pass, which uploads the same buffer with its own layout.
+		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_when2", text))
+		{
+			char effect[260] = "";
+			runtime->get_uniform_variable_effect_name(var, effect);
+			r.when2 = runtime->find_uniform_variable(effect, text);
 		}
 		if (runtime->get_annotation_string_from_uniform_variable(var, "bv_switch", text))
 		{
@@ -307,7 +359,7 @@ static void collect_rules(effect_runtime *runtime)
 // Filled once a frame on the presenting thread, so injected values are one frame behind.
 static void inject_refresh(effect_runtime *runtime) // s_mutex held
 {
-	if (!s_inject_enable || s_injects.empty() || s_inject_group.empty()) return;
+	if (!s_inject_enable || !s_panel_on || s_injects.empty() || s_inject_group.empty()) return;
 	float next[INJECT_FLOATS];
 	std::memcpy(next, s_inject_data, sizeof(next));
 	for (const Inject &in : s_injects)
@@ -332,9 +384,20 @@ static void inject_refresh(effect_runtime *runtime) // s_mutex held
 	dev->update_buffer_region(s_inject_data, s_inject_buf, 0, sizeof(s_inject_data));
 }
 
-static void refresh_rules(effect_runtime *runtime, command_list *, resource_view, resource_view)
+static void refresh_rules(effect_runtime *runtime)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
+	// An effect with no enabled technique is off, whatever its uniforms still read back as, and
+	// get_effects_state() covers the global toggle key on top of that.
+	const bool global_on = runtime->get_effects_state();
+	s_panel_on = false;
+	for (std::pair<std::string, bool> &e : s_effects)
+	{
+		bool on = false;
+		runtime->enumerate_techniques(e.first.c_str(), [&on](effect_runtime *rt, effect_technique tech) { if (rt->get_technique_state(tech)) on = true; });
+		e.second = global_on && on;
+		if (e.second) s_panel_on = true;
+	}
 	inject_refresh(runtime);
 	if (s_enable_var.handle != 0) runtime->get_uniform_value_bool(s_enable_var, &s_enabled, 1);
 	if (s_dump_var.handle != 0)
@@ -345,16 +408,18 @@ static void refresh_rules(effect_runtime *runtime, command_list *, resource_view
 	}
 	for (Rule &r : s_rules)
 	{
+		const bool fx = r.effect >= 0 && static_cast<size_t>(r.effect) < s_effects.size() && s_effects[r.effect].second;
 		if (r.read)
 		{
 			if (r.have_readback) runtime->set_uniform_value_float(r.var, r.readback, r.count);
-			r.active = r.effective = s_enabled; // a read never writes, so it is always safe to run
+			r.active = r.effective = s_enabled && fx; // a read never writes, so it is always safe to run
 			continue;
 		}
 		bool on = true;
 		if (r.sw.handle != 0) runtime->get_uniform_value_bool(r.sw, &on, 1);
 		if (r.when.handle != 0) runtime->get_uniform_value_float(r.when, r.when_range, 2);
-		r.active = s_enabled && on;
+		if (r.when2.handle != 0) runtime->get_uniform_value_float(r.when2, r.when2_range, 2);
+		r.active = s_enabled && on && fx;
 		runtime->get_uniform_value_float(r.var, r.value, r.count);
 		// A rule at its neutral value must not claim the buffer: claiming it takes over the upload and
 		// discards any other add-on edit to the same constants. Only rules that move a number intercept.
@@ -367,6 +432,8 @@ static void refresh_rules(effect_runtime *runtime, command_list *, resource_view
 	for (size_t i = 0; i < s_rules.size(); ++i)
 		if (s_rules[i].effective) s_effective_mask.set(i);
 }
+
+static void refresh_rules_effects(effect_runtime *runtime, command_list *, resource_view, resource_view) { refresh_rules(runtime); }
 
 // ---------------------------------------------------------------------------- 1. shader replacement
 static bool on_create_pipeline(device *, pipeline_layout, uint32_t subobject_count, const pipeline_subobject *subobjects)
@@ -431,10 +498,16 @@ static void on_destroy_resource(device *, resource res)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
 	s_targets.erase(res.handle);
+	s_buf_size.erase(res.handle);
 	s_upgraded_res.erase(res.handle);
-	s_base.erase(res.handle);
 	s_last.erase(res.handle);
 	s_mapped.erase(res.handle);
+	// A register keeps its binding until something else is bound there, so a context can still be
+	// pointing at this handle. Recycled onto a new buffer that mirror would hand a rule the wrong
+	// size and let it claim a buffer it has never seen.
+	for (auto &c : s_cmd)
+		for (uint32_t i = 0; i < 16; ++i)
+			if (c.second.cb[i] == res.handle) { c.second.cb[i] = 0; c.second.cb_size[i] = 0; c.second.cb_first[i] = 0; }
 }
 static void on_destroy_device(device *dev)
 {
@@ -450,6 +523,18 @@ static void on_destroy_command_list(command_list *cmd)
 }
 
 // ---------------------------------------------------------------------------- 2/3. tracking what each draw binds
+// Byte size of a constant buffer, cached. Asked when a binding changes, never in the draw loop.
+static uint64_t buffer_size(device *dev, uint64_t buf) // s_mutex held
+{
+	const auto it = s_buf_size.find(buf);
+	if (it != s_buf_size.end()) return it->second;
+	resource res; res.handle = buf;
+	const resource_desc d = dev->get_resource_desc(res);
+	const uint64_t size = d.type == resource_type::buffer ? d.buffer.size : 0;
+	s_buf_size[buf] = size;
+	return size;
+}
+
 static void on_bind_pipeline(command_list *cmd, pipeline_stage stages, pipeline handle)
 {
 	if ((static_cast<uint32_t>(stages) & static_cast<uint32_t>(pipeline_stage::pixel_shader)) == 0) return;
@@ -474,13 +559,18 @@ static void on_push_descriptors(command_list *cmd, shader_stage stages, pipeline
 #endif
 		) return;
 	const buffer_range *ranges = static_cast<const buffer_range *>(update.descriptors);
+	device *const dev = cmd->get_device();
 	std::lock_guard<std::mutex> lock(s_mutex);
 	CmdState &st = s_cmd[cmd];
 	for (uint32_t i = 0; i < update.count; ++i)
 	{
 		const uint32_t slot = update.binding + i;
+		if (slot >= 16) continue;
+		const uint64_t buf = ranges[i].buffer.handle;
+		// Carried with the binding so bv_size can be tested for free on every draw that follows.
+		if (st.cb[slot] != buf) st.cb_size[slot] = buf != 0 ? buffer_size(dev, buf) : 0;
 		// PSSetConstantBuffers1 binds a sub-range, so remember its base; rule offsets are from the start.
-		if (slot < 16) { st.cb[slot] = ranges[i].buffer.handle; st.cb_first[slot] = ranges[i].offset / 4; }
+		st.cb[slot] = buf; st.cb_first[slot] = ranges[i].offset / 4;
 	}
 }
 static void on_draw_any(command_list *cmd)
@@ -491,7 +581,7 @@ static void on_draw_any(command_list *cmd)
 	const CmdState &st = it->second;
 	// Bind the injection buffer before this draw. D3D11 binding is sticky, so [Inject] Slot must be
 	// a register nothing else uses.
-	if (s_enabled && s_inject_enable && s_inject_buf.handle != 0 && !s_inject_group.empty()
+	if (s_enabled && s_panel_on && s_inject_enable && s_inject_buf.handle != 0 && !s_inject_group.empty()
 		&& group_matches(s_inject_group, st.ps_hash) && cmd->get_device() == s_inject_dev)
 	{
 		const buffer_range range = { s_inject_buf, 0, UINT64_MAX };
@@ -503,13 +593,32 @@ static void on_draw_any(command_list *cmd)
 		const Rule &r = s_rules[i];
 		const uint64_t buf = st.cb[r.slot];
 		if (buf == 0 || !group_matches(r.group, st.ps_hash)) continue;
+		// bv_size has to gate the claim as well as the write. A register keeps whatever was last
+		// bound to it, so without this a rule claims every buffer that has ever sat at its register,
+		// takes over their uploads, and hands them back byte for byte with any other add-on's edit
+		// to them dropped. Only buffers this rule could actually write get claimed.
+		if (r.size != 0 && st.cb_size[r.slot] != static_cast<uint64_t>(r.size)) continue;
 		// Recorded before the neutral test, or a rule sitting at its default would report that its
 		// buffer does not exist, which is the one thing this flag is meant to rule out.
 		s_rules[i].seen_buffer = true;
 		if (!r.effective) continue; // neutral rules never claim a buffer, so other add-ons keep it
-		s_targets[buf].set(i);
+		Claim &cl = s_targets[buf];
+		cl.rules.set(i);
 		// Sub-range base for apply() to shift the rule offset by. Zero for a plain bind.
-		s_base[buf] = st.cb_first[r.slot];
+		cl.base = st.cb_first[r.slot];
+		if ((cl.slots & (1u << r.slot)) == 0)
+		{
+			const uint32_t was = cl.slots;
+			cl.slots |= 1u << r.slot;
+			if (was != 0 && ++s_claim_conflicts <= 20)
+				logf("BlancoVision.addon: buffer %llX (%llu bytes) is claimed at more than one register "
+					"(now b%d, rule \"%s\"). One upload of it cannot be told from the other, so both "
+					"sets of rules fire on both, which reads as brightness that changes with the view. "
+					"Separate them with bv_when/bv_when2 on a float only one of them holds.",
+					static_cast<unsigned long long>(buf), static_cast<unsigned long long>(st.cb_size[r.slot]),
+					r.slot, r.name);
+		}
+		if ((cl.slots & (cl.slots - 1)) != 0) s_rules[i].ambiguous = true;
 	}
 	if (s_dump || s_dump_shaders)
 	{
@@ -661,47 +770,64 @@ static bool on_draw_indexed(command_list *cmd, uint32_t, uint32_t, uint32_t, int
 static Mask targeted(uint64_t buf)
 {
 	const auto tt = s_targets.find(buf);
-	return tt != s_targets.end() ? (tt->second & s_effective_mask) : Mask();
+	return tt != s_targets.end() ? (tt->second.rules & s_effective_mask) : Mask();
 }
 
-// Apply the rules that target this buffer to CPU memory holding bytes [offset, offset + size) of it.
-static void apply(uint64_t buf, float *data, uint64_t offset, uint64_t size, uint64_t total)
+// Apply the rules that target this buffer to CPU memory holding bytes [offset, offset + size) of
+// it. Returns whether any byte actually changed, which is what says the upload is worth taking over.
+static bool apply(uint64_t buf, float *data, uint64_t offset, uint64_t size, uint64_t total)
 {
-	const Mask mask = targeted(buf);
+	const auto claim = s_targets.find(buf);
+	const Mask mask = claim != s_targets.end() ? (claim->second.rules & s_effective_mask) : Mask();
+	const int64_t base = claim != s_targets.end() ? static_cast<int64_t>(claim->second.base) : 0;
 	if (s_dump)
 	{
 		Snapshot &last = s_last[buf];
 		last.total = total;
 		last.floats.assign(data, data + (size / 4 < DUMP_FLOATS ? size / 4 : DUMP_FLOATS));
 	}
-	if (!mask.any() || !s_enabled) return;
+	if (!mask.any() || !s_enabled) return false;
+	bool wrote = false;
 	for (size_t i = 0; i < s_rules.size(); ++i)
 	{
 		if (!mask.test(i)) continue;
 		Rule &r = s_rules[i];
 		if (!r.effective) continue;
-		// Counted apart so the panel can separate a bv_size that never matches anything from one
-		// that matches and then falls out on the offset or the bv_when gate.
 		++r.tried;
-		if (r.size != 0 && static_cast<uint64_t>(r.size) != total) continue;
-		++r.size_ok;
-		const auto bt = s_base.find(buf);
-		const int64_t base = bt != s_base.end() ? static_cast<int64_t>(bt->second) : 0;
+		if (r.size != 0 && static_cast<uint64_t>(r.size) != total) continue; // claimed on size already, kept as a backstop
 		const int64_t first = static_cast<int64_t>(r.offset) + base - static_cast<int64_t>(offset / 4);
 		if (first < 0 || static_cast<uint64_t>(first + r.count) * 4 > size) continue;
-		if (r.when_offset >= 0)
+		// Both content gates, ANDed. The float each names has to fall inside its range.
+		const int gate_at[2] = { r.when_offset, r.when2_offset };
+		const float *gate_range[2] = { r.when_range, r.when2_range };
+		bool gated_out = false;
+		for (int g = 0; g < 2 && !gated_out; ++g)
 		{
-			const int64_t at = static_cast<int64_t>(r.when_offset) + base - static_cast<int64_t>(offset / 4);
-			if (at < 0 || static_cast<uint64_t>(at + 1) * 4 > size) continue;
+			if (gate_at[g] < 0) continue;
+			const int64_t at = static_cast<int64_t>(gate_at[g]) + base - static_cast<int64_t>(offset / 4);
+			if (at < 0 || static_cast<uint64_t>(at + 1) * 4 > size) { gated_out = true; break; }
 			const float v = data[at];
-			if (v < r.when_range[0] || v > r.when_range[1]) continue;
+			if (v < gate_range[g][0] || v > gate_range[g][1]) gated_out = true;
 		}
+		if (gated_out) continue;
 		float *p = data + first;
 		if (r.read) { for (int k = 0; k < r.count; ++k) r.readback[k] = p[k]; r.have_readback = true; ++r.writes; continue; }
+		// Already carrying this rule's own output: these are bytes we patched and the engine has not
+		// rewritten, so patching again would multiply twice. "set" is idempotent and never gets here.
+		if (r.op != 0 && buf == r.last_buf)
+		{
+			bool same = true;
+			for (int k = 0; k < r.count; ++k) if (p[k] != r.last_out[k]) same = false;
+			if (same) continue;
+		}
 		for (int k = 0; k < r.count; ++k)
 			p[k] = r.op == 1 ? p[k] * r.value[k] : r.op == 2 ? p[k] + r.value[k] : r.value[k];
+		r.last_buf = buf;
+		for (int k = 0; k < r.count; ++k) r.last_out[k] = p[k];
 		++r.writes;
+		wrote = true;
 	}
+	return wrote;
 }
 static void on_map_buffer_region(device *, resource res, uint64_t offset, uint64_t, map_access access, void **data)
 {
@@ -720,6 +846,12 @@ static void on_unmap_buffer_region(device *dev, resource res)
 	if (size > 0) apply(res.handle, static_cast<float *>(it->second.data), it->second.offset, size, desc.buffer.size);
 	s_mapped.erase(it);
 }
+// Kept alive between calls, and per thread because deferred contexts upload from their own.
+static std::vector<float> &upload_scratch()
+{
+	static thread_local std::vector<float> scratch;
+	return scratch;
+}
 static bool on_update_buffer_region(device *dev, const void *data, resource res, uint64_t offset, uint64_t size)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
@@ -731,21 +863,26 @@ static bool on_update_buffer_region(device *dev, const void *data, resource res,
 	if (offset >= total) return false;
 	if (size > total - offset) size = total - offset;
 	// The source is the app own memory, so patch a copy: in place would compound every "mul" rule
-	// each frame if the engine reuses the allocation, and corrupt state it may read back.
-	std::vector<float> scratch(static_cast<size_t>(size / 4));
-	if (scratch.empty()) return false;
+	// each frame if the engine reuses the allocation, and corrupt state it may read back. The copy
+	// is kept per thread: this runs hundreds of times a frame and must not reach the allocator.
+	if (size < 4) return false;
+	std::vector<float> &scratch = upload_scratch();
+	scratch.resize(static_cast<size_t>(size / 4));
 	std::memcpy(scratch.data(), data, scratch.size() * sizeof(float));
-	apply(res.handle, scratch.data(), offset, size, total);
-	if (!targeted(res.handle).any() || !s_enabled) return false; // dump only, nothing was patched
+	if (!apply(res.handle, scratch.data(), offset, size, total)) return false; // dump only, or nothing matched
 	// This goes to the original immediate context, so it does not re-enter this handler.
 	dev->update_buffer_region(scratch.data(), res, offset, size);
 	return true; // the patched copy has been uploaded; suppress the original
 }
 
-// Deferred-context UpdateSubresource. The command list records the copy, so re-uploading would
-// reorder; patch in place instead, which is safe because the data is recorded, not reused.
+// Deferred-context UpdateSubresource. The source is the caller's own memory, so patching it in
+// place rewrote the game's copy of the struct, and a "mul" rule then compounded on every frame the
+// engine re-uploaded that struct instead of rebuilding it. Patch a copy and record that at the same
+// point in the command list, which is the immediate path's answer and reorders nothing either.
+static thread_local bool s_in_update_command = false;
 static bool on_update_buffer_region_command(command_list *cmd, const void *data, resource res, uint64_t offset, uint64_t size)
 {
+	if (s_in_update_command) return false; // our own re-record, if it ever comes back through here
 	device *const dev = cmd->get_device();
 	std::lock_guard<std::mutex> lock(s_mutex);
 	if (!targeted(res.handle).any() && !s_dump) return false;
@@ -753,8 +890,15 @@ static bool on_update_buffer_region_command(command_list *cmd, const void *data,
 	const uint64_t total = desc.type == resource_type::buffer ? desc.buffer.size : 0;
 	if (total == 0 || offset >= total) return false;
 	if (size > total - offset) size = total - offset;
-	apply(res.handle, const_cast<float *>(static_cast<const float *>(data)), offset, size, total);
-	return false;
+	if (size < 4) return false;
+	std::vector<float> &scratch = upload_scratch();
+	scratch.resize(static_cast<size_t>(size / 4));
+	std::memcpy(scratch.data(), data, scratch.size() * sizeof(float));
+	if (!apply(res.handle, scratch.data(), offset, size, total)) return false; // dump only, or nothing matched
+	s_in_update_command = true;
+	cmd->update_buffer_region(scratch.data(), res, offset, size);
+	s_in_update_command = false;
+	return true;
 }
 
 // The add-on window in the ReShade overlay. Rules stay where they are, in the effect's own panel;
@@ -763,6 +907,10 @@ static void draw_overlay(effect_runtime *runtime)
 {
 	std::lock_guard<std::mutex> lock(s_mutex);
 	bool save = false;
+
+	// The one question support keeps getting asked: is any of this reaching the game right now.
+	if (!s_panel_on && !s_rules.empty())
+		ImGui::TextColored(ImVec4(1, 0.6f, 0.2f, 1), "Off: the control effect's technique is switched off, so no rule is writing.");
 
 	if (s_enable_var.handle != 0)
 	{
@@ -805,9 +953,12 @@ static void draw_overlay(effect_runtime *runtime)
 	if (ImGui::CollapsingHeader("Which settings are reaching the game"))
 	{
 		ImGui::TextWrapped("Green is writing. Grey is switched off or sitting at its default. Red is "
-			"broken and no slider will move it: \"no buffer\" means nothing ever bound that register "
-			"in that hash group, \"wrong size\" means bv_size never matched a buffer that did, and "
-			"\"never wrote\" means it matched and then fell out on bv_offset or the bv_when gate.");
+			"broken and no slider will move it: \"no buffer\" means no buffer of that bv_size ever "
+			"bound that register in that hash group, and \"never wrote\" means one did and the rule "
+			"then fell out on bv_offset or a bv_when gate. "
+			"\"shared\" is the one to watch: that buffer is also claimed at another register, so its "
+			"uploads carry two different layouts and this rule fires on both of them. Gate it with "
+			"bv_when/bv_when2 on a float only the one you meant holds. The log names the buffer.");
 		unsigned live = 0, idle = 0, broken = 0;
 		std::string copy; // the same table as plain text, for pasting somewhere it can be read
 		if (ImGui::BeginTable("bvdiag", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
@@ -822,8 +973,7 @@ static void draw_overlay(effect_runtime *runtime)
 				// still sitting at its default stays grey no matter what its registers say.
 				const char *fault = !r.seen_buffer ? "no buffer"
 					: r.writes != 0 ? nullptr
-					: r.tried == 0 ? nullptr
-					: r.size_ok == 0 ? "wrong size" : "never wrote";
+					: r.tried == 0 ? nullptr : "never wrote";
 				if (fault != nullptr) ++broken; else if (r.writes != 0) ++live; else ++idle;
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
@@ -834,10 +984,11 @@ static void draw_overlay(effect_runtime *runtime)
 				ImGui::Text("b%d/%d", r.slot, r.size);
 				ImGui::TableNextColumn();
 				if (fault != nullptr) ImGui::TextUnformatted(fault);
+				else if (r.ambiguous) ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%llu, shared", static_cast<unsigned long long>(r.writes));
 				else ImGui::Text("%llu", static_cast<unsigned long long>(r.writes));
 				char line[160];
-				std::snprintf(line, sizeof(line), "%-40s b%d/%-5d %s\n", r.name, r.slot, r.size,
-					fault != nullptr ? fault : std::to_string(r.writes).c_str());
+				std::snprintf(line, sizeof(line), "%-40s b%d/%-5d %s%s\n", r.name, r.slot, r.size,
+					fault != nullptr ? fault : std::to_string(r.writes).c_str(), r.ambiguous ? ", shared" : "");
 				copy += line;
 			}
 			ImGui::EndTable();
@@ -906,7 +1057,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_event<reshade::addon_event::update_buffer_region_command>(on_update_buffer_region_command);
 		reshade::register_event<reshade::addon_event::init_effect_runtime>(on_init_effect_runtime);
 		reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(on_reloaded_effects);
-		reshade::register_event<reshade::addon_event::reshade_begin_effects>(refresh_rules);
+		// reshade_present is the one that has to run: reshade_begin_effects stops firing the moment
+		// effects are switched off, which left every rule frozen at its last value and still writing.
+		// It stays registered as well, so a "read" reaches the effect in the same frame it was taken.
+		reshade::register_event<reshade::addon_event::reshade_present>(refresh_rules);
+		reshade::register_event<reshade::addon_event::reshade_begin_effects>(refresh_rules_effects);
 		reshade::register_overlay("BlancoVision", draw_overlay);
 		break;
 	case DLL_PROCESS_DETACH:
