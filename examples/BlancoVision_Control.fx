@@ -19,14 +19,14 @@ uniform bool DumpConstants < bv = "dump"; ui_label = "Write shader constants to 
 // output every frame with no restart and no shader rebuild. Needs the replacement shader loaded;
 // with stock FXAA it does nothing.
 uniform float PaperWhite < bv = "patch"; bv_switch = "OverrideHDR"; bv_slot = 6; bv_size = 32; bv_offset = 1; bv_op = "set";
-    ui_type = "slider"; ui_min = 40.0; ui_max = 400.0; ui_step = 1.0; ui_label = "HDR paper white";
-    ui_tooltip = "Where SDR white lands in the HDR image. scRGB treats 1.0 as 80 nits, so this scales the whole picture. 203 is the spec default; lower it if bright surfaces like water glare."; ui_category = "HDR output"; > = 203.0;
+    ui_type = "slider"; ui_min = 40.0; ui_max = 400.0; ui_step = 1.0; ui_units = " nits"; ui_label = "HDR paper white";
+    ui_tooltip = "Where SDR white lands in the HDR image. scRGB treats 1.0 as 80 nits, so this scales the whole picture. 203 is the spec default; lower it if bright surfaces like water glare."; ui_category = "HDR output"; ui_category_closed = true; > = 203.0;
 uniform bool OverrideHDR < ui_label = "Apply the HDR controls"; ui_tooltip = "Needs the patched FXAA from mod/hdr/ installed. Off on a stock install."; ui_category = "HDR output"; > = false;
 uniform float ContentGamma < bv = "patch"; bv_switch = "OverrideHDR"; bv_slot = 6; bv_size = 32; bv_offset = 0; bv_op = "set";
     ui_type = "slider"; ui_min = 1.8; ui_max = 2.6; ui_step = 0.05; ui_label = "HDR content gamma";
     ui_tooltip = "The curve the game's output is decoded with. 2.2 is right for almost all PC content. Piecewise sRGB (roughly 2.0 here) lifts shadows and looks hazy with grey blacks; 2.4 is the TV/BT.1886 curve and gives deeper blacks."; ui_category = "HDR output"; > = 2.2;
 uniform float PeakNits < bv = "patch"; bv_switch = "OverrideHDR"; bv_slot = 6; bv_size = 32; bv_offset = 2; bv_op = "set";
-    ui_type = "slider"; ui_min = 200.0; ui_max = 2000.0; ui_step = 10.0; ui_label = "HDR peak brightness";
+    ui_type = "slider"; ui_min = 200.0; ui_max = 2000.0; ui_step = 10.0; ui_units = " nits"; ui_label = "HDR peak brightness";
     ui_tooltip = "How far highlights above the knee are pushed. Set it to the panel's real peak brightness. This expands a clamped SDR image rather than recovering data, so past a point it only makes highlights brighter, not more detailed."; ui_category = "HDR output"; > = 800.0;
 uniform float HighlightKnee < bv = "patch"; bv_switch = "OverrideHDR"; bv_slot = 6; bv_size = 32; bv_offset = 3; bv_op = "set";
     ui_type = "slider"; ui_min = 0.3; ui_max = 0.95; ui_step = 0.01; ui_label = "HDR highlight knee";
@@ -34,7 +34,7 @@ uniform float HighlightKnee < bv = "patch"; bv_switch = "OverrideHDR"; bv_slot =
 // The game's own FXAA parameters, same buffer. These three the shader really does read, so they
 // work on stock FXAA as well as on the replacement. With in game MSAA off, this pass is the only
 // AA in the frame, and the stock settings are tuned for consoles rather than for a 1440p desktop.
-uniform bool OverrideAA < ui_label = "Take over the game edge smoothing"; ui_category = "Edge smoothing"; > = false;
+uniform bool OverrideAA < ui_label = "Take over the game edge smoothing"; ui_category = "Edge smoothing"; ui_category_closed = true; > = false;
 uniform float AASubpix < bv = "patch"; bv_switch = "OverrideAA"; bv_slot = 6; bv_size = 32; bv_offset = 4; bv_op = "set";
     ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Smooth thin details";
     ui_tooltip = "How much subpixel aliasing (shimmer on thin detail) is removed. Higher is softer. 0.75 is the usual quality value, the game ships lower."; ui_category = "Edge smoothing"; > = 0.75;
@@ -47,7 +47,7 @@ uniform float AAEdgeThresholdMin < bv = "patch"; bv_switch = "OverrideAA"; bv_sl
 
 
 // ---- postfx_cbuffer, register b5 (1488 bytes), the composite passes (group "composite") --------
-uniform bool OverrideDesaturate < ui_label = "Override colour strength"; ui_category = "Colour and tone"; > = false;
+uniform bool OverrideDesaturate < ui_label = "Override colour strength"; ui_category = "Colour and tone"; ui_category_closed = true; > = false;
 uniform float Desaturate < bv = "patch"; bv_group = "composite"; bv_slot = 5; bv_size = 1488; bv_offset = 268; bv_op = "set"; bv_switch = "OverrideDesaturate";
     ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Colour strength"; ui_category = "Colour and tone"; > = 1.0;
 uniform bool OverrideGamma < ui_label = "Override brightness curve"; ui_category = "Colour and tone"; > = false;
@@ -77,17 +77,17 @@ uniform float3 ShadowTint < bv = "patch"; bv_group = "composite"; bv_slot = 5; b
 // global multiplies them all. It cannot create parallax where there is no height map.
 uniform float HeightScale < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 4; bv_op = "mul";
     ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Brick and decal depth";
-    ui_tooltip = "Multiplies the global height scale that feeds every parallax material. Only affects surfaces the artists gave a height map, mostly brick and detailed decals. 1.0 is vanilla."; ui_category = "Roads and surfaces"; > = 1.0;
+    ui_tooltip = "Multiplies the global height scale that feeds every parallax material. Only affects surfaces the artists gave a height map, mostly brick and detailed decals. 1.0 is vanilla."; ui_category = "Roads and surfaces"; ui_category_closed = true; > = 1.0;
 uniform float AOStrength < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 6; bv_op = "set";
     ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.05; ui_label = "Corner shadow contrast (needs the patched passes)";
-    ui_tooltip = "Scales the AO term around 1.0 before the game's fourth power curve. 1.0 is vanilla, 0 removes AO entirely, above 1 deepens contact shadows. Affects ambient and image based reflection only, never the direct sun term."; ui_category = "Corner shadows"; > = 1.0;
+    ui_tooltip = "Scales the AO term around 1.0 before the game's fourth power curve. 1.0 is vanilla, 0 removes AO entirely, above 1 deepens contact shadows. Affects ambient and image based reflection only, never the direct sun term."; ui_category = "Corner shadows"; ui_category_closed = true; > = 1.0;
 uniform float AOFloor < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 7; bv_op = "set";
     ui_type = "slider"; ui_min = 0.0; ui_max = 0.6; ui_step = 0.01; ui_label = "Stop corner shadows going black";
     ui_tooltip = "Smallest value the AO term may take, so fully occluded ambient never reaches pure black. The ENB's ShadowAmount 0.75 is the same idea. Vanilla is 0."; ui_category = "Corner shadows"; > = 0.0;
 
 // ---- misc_globals, register b2 (352 bytes), every shader ---------------------------------------
 uniform float HDRScale < bv = "patch"; bv_slot = 2; bv_size = 352; bv_offset = 59; bv_op = "mul";
-    ui_type = "slider"; ui_min = 0.25; ui_max = 4.0; ui_step = 0.01; ui_label = "Overall brightness before tonemap"; ui_category = "Sunlight and ambient"; > = 1.0;
+    ui_type = "slider"; ui_min = 0.25; ui_max = 4.0; ui_step = 0.01; ui_label = "Overall brightness before tonemap"; ui_category = "Sunlight and ambient"; ui_category_closed = true; > = 1.0;
 
 // ---- lighting_globals, register b3 (960 bytes), every lit shader: the timecycle's lighting -----
 uniform float3 SunColour < bv = "patch"; bv_slot = 3; bv_size = 960; bv_offset = 4; bv_op = "mul";
@@ -112,9 +112,15 @@ uniform float4 SunDirectionView < bv = "read"; bv_slot = 3; bv_size = 960; bv_of
     ui_type = "drag"; noedit = true; ui_label = "Sun direction (read from the game)"; ui_category = "Sunlight and ambient"; > = float4(0, 0, 0, 0);
 
 // ---- lighting_locals, 336 bytes, deferredLightParams. The sun pass binds it at b11 and the
-// artificial light pass at b12, so the register alone separates them and no hash group is needed
-// (tools/disasm.py on the vanilla containers; b11 also carries a 96 byte buffer, hence bv_size).
-uniform bool OverrideShadowFloor < ui_label = "Override how dark shadows go"; ui_category = "Sunlight and shadows"; > = false;
+// artificial light pass at b12 (tools/disasm.py on the vanilla containers; b11 also carries a 96
+// byte buffer, hence bv_size).
+//
+// The register separates the two shaders. It does not separate their uploads, and those are what
+// a rule rewrites: one buffer is uploaded once per light, the sun among them, and at upload time
+// nothing says which of them the bytes are for. So every rule below reaches the sun pass too, and
+// the gates are the only thing holding them off it. The add-on logs the collision and marks these
+// rules "shared" when it sees the same buffer claimed at both registers.
+uniform bool OverrideShadowFloor < ui_label = "Override how dark shadows go"; ui_category = "Sunlight and shadows"; ui_category_closed = true; > = false;
 uniform float ShadowFloor < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset = 39; bv_op = "set"; bv_switch = "OverrideShadowFloor";
     ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "How dark sun shadows go"; ui_category = "Sunlight and shadows"; > = 0.75;
 uniform float ShadowSoftness < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset = 37; bv_op = "mul";
@@ -126,23 +132,35 @@ uniform float ShadowBias < bv = "patch"; bv_slot = 11; bv_size = 336; bv_offset 
 // deferredLightParams[0] position, [1] direction, [2] tangent, [3] colour rgb and intensity w,
 // [4].y radius. The buffer is uploaded once per light, so the radius gate is what separates street
 // lights from head lights and coronas. Widen it to the full range to tint everything.
+//
+// The sun pass shares this buffer and reads [3] as its own colour, so these two gates are also
+// what keeps a street light slider off the sun. Both test a field a light defines and a
+// directional light has no use for. Neither low end may sit at zero: that is the value an unused
+// field carries, and letting it through is the sun changing brightness as the camera turns.
 uniform float2 LightRadiusRange < ui_type = "slider"; ui_min = 0.0; ui_max = 80.0; ui_step = 0.5;
+    ui_units = " m";
     ui_label = "Which lights this section affects (size range)";
-    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone."; ui_category = "Street lights and lamps"; > = float2(0.0, 80.0);
+    ui_tooltip = "Street lights are the wide ones, roughly 10 m and up. Head lights, coronas and interior lamps sit well below that. Raise the low end to leave vehicles alone. Taking it to zero also lets the sun pass through, which is what makes the sky brighten as you look up."; ui_category = "Street lights and lamps"; ui_category_closed = true; > = float2(1.0, 80.0);
+uniform float2 LightIntensityRange < ui_type = "drag"; ui_min = 0.0; ui_max = 100.0; ui_step = 0.01;
+    ui_label = "Which lights this section affects (brightness range)";
+    ui_tooltip = "deferredLightParams[3].w, the light's own intensity, as a second gate beside the size one. A light with no brightness is not a light, so the low end is what rejects an upload that never filled this in. Leave the top end wide unless you want to pick out dim lights."; ui_category = "Street lights and lamps"; > = float2(0.01, 100.0);
 uniform float3 LightColour < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 12; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
+    bv_when2_offset = 15; bv_when2 = "LightIntensityRange";
     ui_type = "color"; ui_label = "Street light colour";
     ui_tooltip = "Multiplies the light's own colour, so it tints rather than replaces. Warm sodium is roughly 1.0, 0.72, 0.42; cold LED roughly 0.85, 0.92, 1.0."; ui_category = "Street lights and lamps"; > = float3(1.0, 1.0, 1.0);
 uniform float LightIntensity < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 15; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
+    bv_when2_offset = 15; bv_when2 = "LightIntensityRange";
     ui_type = "slider"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Street light brightness";
     ui_tooltip = "Brightness of the same lights. Under 1 dims them without touching their reach."; ui_category = "Street lights and lamps"; > = 1.0;
 uniform float LightRadius < bv = "patch"; bv_slot = 12; bv_size = 336; bv_offset = 17; bv_op = "mul"; bv_when_offset = 17; bv_when = "LightRadiusRange";
+    bv_when2_offset = 15; bv_when2 = "LightIntensityRange";
     ui_type = "slider"; ui_min = 0.25; ui_max = 3.0; ui_step = 0.05; ui_label = "Street light reach";
-    ui_tooltip = "How far the light carries. The gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range."; ui_category = "Street lights and lamps"; > = 1.0;
+    ui_tooltip = "How far the light carries. The size gate reads the value before this rule writes it, so widening a light cannot pull it into or out of its own range. The brightness gate is read after the rule above has scaled it, which only matters if you take street light brightness to zero."; ui_category = "Street lights and lamps"; > = 1.0;
 
 // ---- deferred_lighting_locals, register b11, 96 bytes: peds ------------------------------------
 uniform float3 SkinColourTweak < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 0; bv_op = "mul";
     ui_type = "color"; ui_label = "Skin tone";
-    ui_tooltip = "Subsurface tint on peds. The 96 byte size is what tells this buffer apart from the sun's, which shares register b11."; ui_category = "People"; > = float3(1.0, 1.0, 1.0);
+    ui_tooltip = "Subsurface tint on peds. The 96 byte size is what tells this buffer apart from the sun's, which shares register b11."; ui_category = "People"; ui_category_closed = true; > = float3(1.0, 1.0, 1.0);
 uniform float3 RimLightColour < bv = "patch"; bv_slot = 11; bv_size = 96; bv_offset = 12; bv_op = "mul";
     ui_type = "color"; ui_label = "Rim light on people";
     ui_tooltip = "Marked unused in the shaders shipped with this build, so it may do nothing."; ui_category = "People"; > = float3(1.0, 1.0, 1.0);
@@ -185,7 +203,7 @@ uniform float4 ParticleShadowParams < bv = "patch"; bv_slot = 12; bv_size = 32; 
 // ---- Roads and wet surfaces, puddle_locals b10 (48) and ripple_locals b9 (32) -------------------
 uniform float4 PuddleScaleRange < bv = "patch"; bv_slot = 10; bv_size = 48; bv_offset = 0; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Puddle size and spread";
-    ui_tooltip = "g_Puddle_ScaleXY_Range. How big the puddle mask tiles and how far it reaches."; ui_category = "Puddles and rain"; > = float4(1.0, 1.0, 1.0, 1.0);
+    ui_tooltip = "g_Puddle_ScaleXY_Range. How big the puddle mask tiles and how far it reaches."; ui_category = "Puddles and rain"; ui_category_closed = true; > = float4(1.0, 1.0, 1.0, 1.0);
 uniform float4 PuddleParams < bv = "patch"; bv_slot = 10; bv_size = 48; bv_offset = 4; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 4.0; ui_step = 0.05; ui_label = "Puddle depth and edge";
     ui_tooltip = "g_PuddleParams. Wet road reflections are the strongest single thing a night scene has, so this is worth a pass at 0.5 and at 2."; ui_category = "Puddles and rain"; > = float4(1.0, 1.0, 1.0, 1.0);
@@ -197,7 +215,7 @@ uniform float3 RippleData < bv = "patch"; bv_slot = 9; bv_size = 32; bv_offset =
 // b5 is postfx_cbuffer at 1488 bytes in the composite passes and more_stuff at 128 everywhere else.
 uniform float ReflectionMipCount < bv = "patch"; bv_slot = 5; bv_size = 128; bv_offset = 26; bv_op = "set"; bv_switch = "OverrideReflectionMip";
     ui_type = "slider"; ui_min = 1.0; ui_max = 9.0; ui_step = 1.0; ui_label = "Building reflection sharpness";
-    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This changes how a reflection looks; what it contains is the timecycle range in docs/13-shader-levers.md, which is a pack change rather than a slider."; ui_category = "Reflections and fog"; > = 9.0;
+    ui_tooltip = "gReflectionMipCount. Fewer mips keeps the cube map sharp on rough surfaces, more blurs it. This changes how a reflection looks; what it contains is the timecycle range in docs/13-shader-levers.md, which is a pack change rather than a slider."; ui_category = "Reflections and fog"; ui_category_closed = true; > = 9.0;
 uniform bool OverrideReflectionMip < ui_label = "Override reflection sharpness"; ui_category = "Reflections and fog"; > = false;
 uniform float GlobalFogIntensity < bv = "patch"; bv_slot = 2; bv_size = 336; bv_offset = 73; bv_op = "mul";
     ui_type = "slider"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Fog thickness";
@@ -213,7 +231,7 @@ uniform float4 ReflectionTweaks < bv = "patch"; bv_slot = 3; bv_size = 960; bv_o
 // panel they have plenty of readers: the counts below are from tools/cbmap.py on water.fxc.
 uniform float4 WaterAmbientColour < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset = 12; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Water colour";
-    ui_tooltip = "gWaterAmbientColor, read by 9 of the water shaders. The colour water takes from the sky rather than from the sun, so this is what makes it read as blue, green or grey."; ui_category = "Water"; > = float4(1.0, 1.0, 1.0, 1.0);
+    ui_tooltip = "gWaterAmbientColor, read by 9 of the water shaders. The colour water takes from the sky rather than from the sun, so this is what makes it read as blue, green or grey."; ui_category = "Water"; ui_category_closed = true; > = float4(1.0, 1.0, 1.0, 1.0);
 uniform float4 WaterDirectionalColour < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset = 16; bv_op = "mul";
     ui_type = "drag"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.02; ui_label = "Sun glint on water";
     ui_tooltip = "gWaterDirectionalColor. The sun's contribution, which is the specular glint off the surface."; ui_category = "Water"; > = float4(1.0, 1.0, 1.0, 1.0);
@@ -318,7 +336,7 @@ uniform float4 WaterSpeed < bv = "patch"; bv_slot = 4; bv_size = 272; bv_offset 
 // direction by 96. Nothing here touches sun direction, which would move the lighting.
 uniform float3 SkyZenithColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 12; bv_op = "mul";
     ui_type = "color"; ui_label = "Sky colour overhead";
-    ui_tooltip = "zenithColor, the colour straight up. The single strongest control over whether a clear day reads warm or cold."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
+    ui_tooltip = "zenithColor, the colour straight up. The single strongest control over whether a clear day reads warm or cold."; ui_category = "Sky"; ui_category_closed = true; > = float3(1.0, 1.0, 1.0);
 uniform float3 SkyZenithTransition < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 16; bv_op = "mul";
     ui_type = "color"; ui_label = "Sky colour halfway up";
     ui_tooltip = "zenithTransitionColor, the band between overhead and the horizon."; ui_category = "Sky"; > = float3(1.0, 1.0, 1.0);
@@ -347,7 +365,7 @@ uniform float4 SunShape < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset =
 // ---- Clouds. The sky pass carries its own copies at b12 480, the cloud passes use b12 464 --------
 uniform float3 SkyCloudColour < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 60; bv_op = "mul";
     ui_type = "color"; ui_label = "Cloud colour (sky pass)";
-    ui_tooltip = "cloudMidColour, the lit body of the cloud as the sky shader draws it."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
+    ui_tooltip = "cloudMidColour, the lit body of the cloud as the sky shader draws it."; ui_category = "Clouds"; ui_category_closed = true; > = float3(1.0, 1.0, 1.0);
 uniform float3 SkyCloudShadow < bv = "patch"; bv_slot = 12; bv_size = 480; bv_offset = 64; bv_op = "mul";
     ui_type = "color"; ui_label = "Cloud shadow depth (sky pass)";
     ui_tooltip = "cloudShadowMinusBaseColourTimesShadowStrength. How dark the underside of a cloud goes, which is most of what makes an overcast sky read as heavy."; ui_category = "Clouds"; > = float3(1.0, 1.0, 1.0);
